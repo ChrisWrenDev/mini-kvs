@@ -1,4 +1,5 @@
 use clap::{Command, arg};
+use kvs::Result;
 use std::process;
 
 fn cli() -> Command {
@@ -29,7 +30,7 @@ fn cli() -> Command {
         )
 }
 
-fn main() {
+fn main() -> Result<()> {
     let matches = cli().get_matches();
 
     match matches.subcommand() {
