@@ -31,6 +31,8 @@ fn cli() -> Command {
 }
 
 fn main() -> Result<()> {
+    // Build log
+
     let matches = cli().get_matches();
 
     match matches.subcommand() {

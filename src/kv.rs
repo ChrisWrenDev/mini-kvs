@@ -144,33 +144,8 @@ impl Segment {
         let size = metadata.len();
         Ok(size)
     }
-}
-
-struct Log {
-    base_dir: PathBuf,
-    segments: Vec<Segment>,
-    active: Segment,
-    size: u64,
-}
-
-impl Log {
-    fn read() {
-        // Get key-value from segment
-
-        // let path_dir: PathBuf = PathBuf::from("./");
-    }
-    fn append() {
-        // Add key-value to acitve segment and return offset for index
-    }
-    fn interator() {
-        // Find relevant segment
-    }
-    fn rollover() {
-        // Handle creation of new segments
-        // When are they needed?
-    }
     fn compact() {
-        // Remove old entries
+        // Remove stale entries
     }
 }
 
@@ -178,27 +153,6 @@ struct CommandPos {
     file_id: u64, // Which file
     offset: u64,  // Where in the file
     length: u64,  // Number of bytes
-}
-
-struct Index {
-    map: HashMap<String, CommandPos>,
-}
-
-// TO DO:
-// - handle cases where no key value is present for action
-impl Index {
-    fn read() {
-        // Get log pointer
-    }
-    fn write() {
-        // Add or Update key
-    }
-    fn remove() {
-        // Remove key from index
-    }
-    fn build() {
-        // Read log and build index
-    }
 }
 
 /// KvStore creates HashMap of key/value pairs
@@ -214,35 +168,99 @@ impl Index {
 /// ```
 #[derive(Default)]
 pub struct KvStore {
-    map: HashMap<String, String>,
+    base_dir: PathBuf,
+    segments: HashMap<String, Segment>,
+    active: String,
+    size: u64,
+    index: HashMap<String, CommandPos>,
 }
 
 impl KvStore {
     /// Create a key/value store
-    pub fn new() -> KvStore {
+    pub fn open(dir_path: String) -> KvStore {
+        let base_dir = PathBuf::from(dir_path);
+
+        // Add segments to vector
+        let mut segments = HashMap::new();
+
+        // Create index
+        let index = HashMap::new();
+
+        // Temp - Single File
+        let file_id = 1;
+        let active = file_id.to_owned().to_string();
+        let segment = Segment::new(&base_dir, file_id).unwrap();
+        segments.insert(active.clone(), segment);
+
+        // Check directory for log files
+        // Create segment for each log file
+        // Update index with segment
+
+        // Create Log
         KvStore {
-            map: HashMap::new(),
+            base_dir,
+            segments,
+            active,
+            size: 0,
+            index,
         }
     }
     /// Add a key/value pair to store
-    pub fn set(&mut self, key: String, value: String) {
-        self.map.insert(key, value);
-
+    pub fn set(&mut self, key: String, value: String) -> Result<()> {
         // Create set value
         // Serialize value to string
         // Append to log
         // If successful exit silently
         // If failed print error / return non-zero code
+
+        let segment_size = self.segments.get_mut(&self.active).unwrap().size().unwrap();
+
+        if segment_size >= MAX_LOG_FILE_SIZE {
+            let active_segment = self.segments.get_mut(&self.active).unwrap();
+
+            // Change status
+            active_segment.status = SegmentStatus::Sealed;
+
+            // Create new segment
+            let active_file_id = self.active.parse::<u64>().unwrap();
+            let new_file_id = 1 + active_file_id;
+            let segment = Segment::new(&self.base_dir, new_file_id).unwrap();
+            self.segments.insert(new_file_id.to_string(), segment);
+
+            // Update active segment
+            self.active = new_file_id.to_string();
+        }
+
+        let active_segment = self.segments.get_mut(&self.active).unwrap();
+
+        let cmd_pos = active_segment.append(key.clone(), value).unwrap();
+
+        // Update index
+        self.index.insert(key, cmd_pos);
+
+        Ok(())
     }
     /// Get a value from store using key
-    pub fn get(&self, key: String) -> Option<String> {
-        self.map.get(&key).cloned()
-
+    pub fn get(&mut self, key: String) -> Result<String> {
         // Read log to build index (key + log pointer)
         // check index for key
         // If succcessful deserialise and print value
         // If failed print "Key not found"
         // exit code 0
+
+        // Get log pointer from index
+        let log_pointer = self.index.get(&key).unwrap();
+
+        let file_id = log_pointer.file_id.to_string();
+
+        // Get key-value from segment
+        let segment = self.segments.get_mut(&file_id).unwrap();
+
+        let value = segment
+            .read(log_pointer.offset, log_pointer.length)
+            .unwrap();
+
+        Ok(value)
     }
     /// Remove key/value pair from store
     pub fn remove(&mut self, key: String) {
