@@ -13,6 +13,9 @@ pub enum KvsError {
     #[fail(display = "Key not found")]
     KeyNotFound,
 
+    #[fail(display = "File not found")]
+    FileNotFound,
+
     #[fail(display = "Log compaction error: {}", _0)]
     Compaction(String),
 

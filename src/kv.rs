@@ -4,10 +4,10 @@
 use std::collections::HashMap;
 
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
-use std::path::PathBuf;
+use std::io::{BufReader, BufWriter, Error, Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 
-use crate::Result;
+use crate::{KvsError, Result};
 
 const MAX_LOG_FILE_SIZE: u64 = 4 * 1024 * 1024; // 4 MB
 
@@ -28,7 +28,7 @@ struct Segment {
 }
 
 impl Segment {
-    fn new(dir_path: &PathBuf, file_id: u64) -> Result<Segment> {
+    fn new(dir_path: &Path, file_id: u64) -> Result<Segment> {
         // Create empty file
         let file_name = format!("log.{}", file_id);
         let path = dir_path.join(file_name);
@@ -56,7 +56,7 @@ impl Segment {
             writer: BufWriter::new(writer_file),
         })
     }
-    fn open(dir_path: &PathBuf, file_id: u64, status: SegmentStatus) -> Result<Segment> {
+    fn open(dir_path: &Path, file_id: u64, status: SegmentStatus) -> Result<Segment> {
         // Create empty file
         let file_name = format!("log.{}", file_id);
         let path = dir_path.join(file_name);
@@ -81,7 +81,7 @@ impl Segment {
             writer: BufWriter::new(writer_file),
         })
     }
-    fn read(&mut self, offset: u64, length: u64) -> Result<String> {
+    fn read(&mut self, offset: u64, length: u64) -> Result<Vec<u8>> {
         // Get key-value at a given offset (provided by index)
 
         let mut buffer = vec![0; length as usize];
@@ -94,7 +94,7 @@ impl Segment {
 
         // Deserialise value
         // Return value
-        Ok(String::from_utf8_lossy(&buffer).to_string())
+        Ok(buffer)
     }
     fn append(&mut self, key: String, value: String) -> Result<CommandPos> {
         // Add key-value and return offset for index
@@ -124,6 +124,9 @@ impl Segment {
         self.writer.write_all(&buffer)?;
         self.writer.flush()?;
 
+        // Value offset
+        let value_offset = cur_offset + 16 + key_bytes.len() as u64;
+
         // Update segment offset
         self.offset += buffer.len() as u64;
 
@@ -133,8 +136,8 @@ impl Segment {
         // Update log pointer
         Ok(CommandPos {
             file_id: self.file_id,
-            offset: cur_offset,
-            length: buffer.len() as u64,
+            offset: value_offset,
+            length: value_bytes.len() as u64,
         })
     }
     fn size(&self) -> Result<u64> {
@@ -177,7 +180,7 @@ pub struct KvStore {
 
 impl KvStore {
     /// Create a key/value store
-    pub fn open(dir_path: String) -> KvStore {
+    pub fn open(dir_path: &Path) -> Result<KvStore> {
         let base_dir = PathBuf::from(dir_path);
 
         // Add segments to vector
@@ -189,7 +192,7 @@ impl KvStore {
         // Temp - Single File
         let file_id = 1;
         let active = file_id.to_owned().to_string();
-        let segment = Segment::new(&base_dir, file_id).unwrap();
+        let segment = Segment::new(&base_dir, file_id)?;
         segments.insert(active.clone(), segment);
 
         // Check directory for log files
@@ -197,13 +200,13 @@ impl KvStore {
         // Update index with segment
 
         // Create Log
-        KvStore {
+        Ok(KvStore {
             base_dir,
             segments,
             active,
             size: 0,
             index,
-        }
+        })
     }
     /// Add a key/value pair to store
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
@@ -213,10 +216,18 @@ impl KvStore {
         // If successful exit silently
         // If failed print error / return non-zero code
 
-        let segment_size = self.segments.get_mut(&self.active).unwrap().size().unwrap();
+        let segment_size = self
+            .segments
+            .get_mut(&self.active)
+            .ok_or(KvsError::FileNotFound)?
+            .size()
+            .map_err(|_| KvsError::FileNotFound)?;
 
         if segment_size >= MAX_LOG_FILE_SIZE {
-            let active_segment = self.segments.get_mut(&self.active).unwrap();
+            let active_segment = self
+                .segments
+                .get_mut(&self.active)
+                .ok_or(KvsError::FileNotFound)?;
 
             // Change status
             active_segment.status = SegmentStatus::Sealed;
@@ -231,9 +242,14 @@ impl KvStore {
             self.active = new_file_id.to_string();
         }
 
-        let active_segment = self.segments.get_mut(&self.active).unwrap();
+        let active_segment = self
+            .segments
+            .get_mut(&self.active)
+            .ok_or(KvsError::FileNotFound)?;
 
-        let cmd_pos = active_segment.append(key.clone(), value).unwrap();
+        let cmd_pos = active_segment
+            .append(key.clone(), value)
+            .map_err(|_| KvsError::KeyNotFound)?;
 
         // Update index
         self.index.insert(key, cmd_pos);
@@ -241,7 +257,7 @@ impl KvStore {
         Ok(())
     }
     /// Get a value from store using key
-    pub fn get(&mut self, key: String) -> Result<String> {
+    pub fn get(&mut self, key: String) -> Result<Option<String>> {
         // Read log to build index (key + log pointer)
         // check index for key
         // If succcessful deserialise and print value
@@ -249,23 +265,25 @@ impl KvStore {
         // exit code 0
 
         // Get log pointer from index
-        let log_pointer = self.index.get(&key).unwrap();
+        let log_pointer = self.index.get(&key).ok_or(KvsError::KeyNotFound)?;
 
         let file_id = log_pointer.file_id.to_string();
 
-        // Get key-value from segment
-        let segment = self.segments.get_mut(&file_id).unwrap();
+        let segment = self
+            .segments
+            .get_mut(&file_id)
+            .ok_or(KvsError::FileNotFound)?;
 
-        let value = segment
-            .read(log_pointer.offset, log_pointer.length)
-            .unwrap();
+        // Has all the data (kv length, val length, key, value)
+        let value_bytes = segment.read(log_pointer.offset, log_pointer.length)?;
+        let value = String::from_utf8_lossy(&value_bytes).into_owned();
 
-        Ok(value)
+        println!("VALUE: {}", value);
+
+        Ok(Some(value))
     }
     /// Remove key/value pair from store
-    pub fn remove(&mut self, key: String) {
-        self.map.remove(&key);
-
+    pub fn remove(&mut self, key: String) -> Result<()> {
         // Read log to build index (key + log pointer)
         // check index for key
         // If fail print "Key not found"
@@ -275,5 +293,8 @@ impl KvStore {
         // -- append to log
         // -- if successful exit silently / exit code 0
         // -- if failure print error / return non-zero code
+        self.set(key.clone(), "".to_string())?;
+        self.index.remove(&key).ok_or(KvsError::KeyNotFound)?;
+        Ok(())
     }
 }
