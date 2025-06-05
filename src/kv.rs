@@ -356,37 +356,14 @@ impl KvStore {
         })
     }
     /// Add a key/value pair to store
-    pub fn set(&mut self, entry: Entry) -> Result<()> {
-        let segment_size = self
-            .segments
-            .get_mut(&self.active)
-            .ok_or(KvsError::FileNotFound)?
-            .size()
-            .map_err(|_| KvsError::FileNotFound)?;
+    pub fn set(&mut self, key: String, value: String) -> Result<()> {
+        // Check file size
+        self.rollover()?;
 
-        if segment_size >= MAX_LOG_FILE_SIZE {
-            let active_segment = self
-                .segments
-                .get_mut(&self.active)
-                .ok_or(KvsError::FileNotFound)?;
-
-            // Change status
-            active_segment.status = SegmentStatus::Sealed;
-
-            // Create new segment
-            let active_file_id = self.active.parse::<u64>().unwrap();
-            let new_file_id = 1 + active_file_id;
-            let segment = Segment::new(&self.base_dir, new_file_id).unwrap();
-            self.segments.insert(new_file_id.to_string(), segment);
-
-            // Update active segment
-            self.active = new_file_id.to_string();
-        }
-
-        let key = match &entry {
-            Entry::Set { key, .. } => key.clone(),
-            Entry::Remove { key } => key.clone(),
-        };
+        //let key = match &entry {
+        //    Entry::Set { key, .. } => key.clone(),
+        //    Entry::Remove { key } => key.clone(),
+        //};
 
         let active_segment = self
             .segments
@@ -394,7 +371,10 @@ impl KvStore {
             .ok_or(KvsError::FileNotFound)?;
 
         let cmd_pos = active_segment
-            .append(entry)
+            .append(Entry::Set {
+                key: key.clone(),
+                value,
+            })
             .map_err(|_| KvsError::KeyNotFound)?;
 
         // Update index
@@ -426,7 +406,48 @@ impl KvStore {
     /// Remove key/value pair from store
     pub fn remove(&mut self, key: String) -> Result<()> {
         self.index.remove(&key).ok_or(KvsError::KeyNotFound)?;
-        self.set(Entry::Remove { key: key.clone() })?;
+
+        let active_segment = self
+            .segments
+            .get_mut(&self.active)
+            .ok_or(KvsError::FileNotFound)?;
+
+        active_segment
+            .append(Entry::Remove { key })
+            .map_err(|_| KvsError::KeyNotFound)?;
+
+        Ok(())
+    }
+    fn rollover(&mut self) -> Result<()> {
+        let active_segment = self
+            .segments
+            .get_mut(&self.active)
+            .ok_or(KvsError::FileNotFound)?;
+
+        let segment_size = active_segment.size().map_err(|_| KvsError::FileNotFound)?;
+
+        if segment_size >= MAX_LOG_FILE_SIZE {
+            return Ok(());
+        }
+        // Change status
+        active_segment.status = SegmentStatus::Sealed;
+
+        // Create new segment
+        let active_file_id = self
+            .active
+            .parse::<u64>()
+            .map_err(|_| KvsError::FileNotFound)?;
+
+        let new_file_id = 1 + active_file_id;
+
+        let new_segment =
+            Segment::new(&self.base_dir, new_file_id).map_err(|_| KvsError::FileNotFound)?;
+
+        self.segments.insert(new_file_id.to_string(), new_segment);
+
+        // Update active segment
+        self.active = new_file_id.to_string();
+
         Ok(())
     }
     /// Size of log
