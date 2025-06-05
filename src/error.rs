@@ -16,6 +16,9 @@ pub enum KvsError {
     #[fail(display = "File not found")]
     FileNotFound,
 
+    #[fail(display = "Empty values not allowed")]
+    EmptyValue,
+
     #[fail(display = "Log compaction error: {}", _0)]
     Compaction(String),
 

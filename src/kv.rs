@@ -19,6 +19,23 @@ enum SegmentStatus {
     Archived,   // Fully compacted, no longer in use
 }
 
+/// A log entry representing either a key-value insertion or a deletion (tombstone).
+pub enum Entry {
+    /// Represents inserting or updating a key with a value.
+    Set {
+        /// The key to be inserted or updated.
+        key: String,
+        /// The value to associate with the key.
+        value: String,
+    },
+
+    /// Represents removing a key from the store (a tombstone).
+    Remove {
+        /// The key to be removed.
+        key: String,
+    },
+}
+
 struct Segment {
     file_id: u64,
     offset: u64,
@@ -97,14 +114,21 @@ impl Segment {
         // Return value
         Ok(buffer)
     }
-    fn append(&mut self, key: String, value: String) -> Result<CommandPos> {
+    fn append(&mut self, entry: Entry) -> Result<CommandPos> {
         // Add key-value and return offset for index
 
+        if let Entry::Set { ref value, .. } = entry {
+            if value.is_empty() {
+                return Err(KvsError::EmptyValue);
+            }
+        }
         // Current Segment Offset
         let cur_offset = self.offset;
 
-        let key_bytes = key.as_bytes();
-        let value_bytes = value.as_bytes();
+        let (key_bytes, value_bytes) = match entry {
+            Entry::Set { key, value } => (key.into_bytes(), value.into_bytes()),
+            Entry::Remove { key } => (key.into_bytes(), vec![]),
+        };
 
         // key_size
         let key_size = key_bytes.len().to_le_bytes();
@@ -116,8 +140,10 @@ impl Segment {
 
         buffer.extend_from_slice(&key_size);
         buffer.extend_from_slice(&value_size);
-        buffer.extend_from_slice(key_bytes);
-        buffer.extend_from_slice(value_bytes);
+        buffer.extend_from_slice(&key_bytes);
+        if !value_bytes.is_empty() {
+            buffer.extend_from_slice(&value_bytes);
+        }
 
         // Serialise value
 
@@ -330,13 +356,7 @@ impl KvStore {
         })
     }
     /// Add a key/value pair to store
-    pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        // Create set value
-        // Serialize value to string
-        // Append to log
-        // If successful exit silently
-        // If failed print error / return non-zero code
-
+    pub fn set(&mut self, entry: Entry) -> Result<()> {
         let segment_size = self
             .segments
             .get_mut(&self.active)
@@ -363,13 +383,18 @@ impl KvStore {
             self.active = new_file_id.to_string();
         }
 
+        let key = match &entry {
+            Entry::Set { key, .. } => key.clone(),
+            Entry::Remove { key } => key.clone(),
+        };
+
         let active_segment = self
             .segments
             .get_mut(&self.active)
             .ok_or(KvsError::FileNotFound)?;
 
         let cmd_pos = active_segment
-            .append(key.clone(), value)
+            .append(entry)
             .map_err(|_| KvsError::KeyNotFound)?;
 
         // Update index
@@ -379,12 +404,6 @@ impl KvStore {
     }
     /// Get a value from store using key
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        // Read log to build index (key + log pointer)
-        // check index for key
-        // If succcessful deserialise and print value
-        // If failed print "Key not found"
-        // exit code 0
-
         // Get log pointer from index
         let log_pointer = match self.index.get(&key) {
             Some(ptr) => ptr,
@@ -406,17 +425,8 @@ impl KvStore {
     }
     /// Remove key/value pair from store
     pub fn remove(&mut self, key: String) -> Result<()> {
-        // Read log to build index (key + log pointer)
-        // check index for key
-        // If fail print "Key not found"
-        // If successful
-        // -- create rm value
-        // -- serialize value to string
-        // -- append to log
-        // -- if successful exit silently / exit code 0
-        // -- if failure print error / return non-zero code
         self.index.remove(&key).ok_or(KvsError::KeyNotFound)?;
-        self.set(key.clone(), "".to_string())?;
+        self.set(Entry::Remove { key: key.clone() })?;
         Ok(())
     }
     /// Size of log

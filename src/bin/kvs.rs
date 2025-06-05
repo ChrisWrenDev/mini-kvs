@@ -1,5 +1,5 @@
 use clap::{Command, arg};
-use kvs::{KvStore, KvsError, Result};
+use kvs::{Entry, KvStore, KvsError, Result};
 use std::env::current_dir;
 use std::process;
 
@@ -43,7 +43,10 @@ fn main() -> Result<()> {
             let key = matches.get_one::<String>("KEY").expect("Required");
             let value = matches.get_one::<String>("VALUE").expect("Required");
 
-            store.set(key.to_owned(), value.to_owned())?;
+            store.set(Entry {
+                key: key.to_owned(),
+                value: value.to_owned(),
+            })?;
         }
         Some(("get", matches)) => {
             let key = matches.get_one::<String>("KEY").expect("Required");
