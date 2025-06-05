@@ -75,7 +75,7 @@ impl Segment {
         // Create Segment
         Ok(Segment {
             file_id,
-            offset: size,
+            offset: 0,
             size,
             status,
             reader: BufReader::new(reader_file),
@@ -84,12 +84,6 @@ impl Segment {
     }
     fn read(&mut self, offset: u64, length: u64) -> Result<Vec<u8>> {
         // Get key-value at a given offset (provided by index)
-
-        let file_len = self.reader.get_ref().metadata()?.len();
-        println!(
-            "Offset: {}, Length: {}, File size: {}",
-            offset, length, file_len
-        );
 
         let mut buffer = vec![0; length as usize];
 
@@ -148,39 +142,38 @@ impl Segment {
         })
     }
     fn index(&mut self, index: &mut HashMap<String, CommandPos>) -> Result<u32> {
-        let mut offset = 0;
         let mut stale_entries = 0;
         let file_size = self.reader.get_ref().metadata()?.len();
 
         // loop through file
         loop {
-            if offset + 16 > file_size {
+            if self.offset + 16 > file_size {
                 break; // not enough for header
             }
 
             // Get key/value size
             let key_size_bytes: [u8; 8] = self
-                .read(offset, 8)?
+                .read(self.offset, 8)?
                 .try_into()
                 .expect("Expected exactly 8 bytes");
             let key_size = u64::from_le_bytes(key_size_bytes);
 
-            offset += 8;
+            self.offset += 8;
 
             let value_size_bytes: [u8; 8] = self
-                .read(offset, 8)?
+                .read(self.offset, 8)?
                 .try_into()
                 .expect("Expected exactly 8 bytes");
             let value_size = u64::from_le_bytes(value_size_bytes);
 
-            offset += 8;
+            self.offset += 8;
 
-            if offset + key_size + value_size > file_size {
+            if self.offset + key_size + value_size > file_size {
                 break; // incomplete entry
             }
 
             // Get key value
-            let key_bytes = match self.read(offset, key_size) {
+            let key_bytes = match self.read(self.offset, key_size) {
                 Ok(bytes) => bytes,
                 _ => break, // EOF or read error
             };
@@ -191,7 +184,7 @@ impl Segment {
             };
 
             // Update offset to start of value
-            offset += key_size;
+            self.offset += key_size;
 
             // Handle removed key/value pairs (tombstone value)
             if value_size == 0 {
@@ -204,13 +197,13 @@ impl Segment {
                 key_value,
                 CommandPos {
                     file_id: self.file_id,
-                    offset,
+                    offset: self.offset,
                     length: value_size,
                 },
             );
 
             // Update offset to start of next entry
-            offset += value_size;
+            self.offset += value_size;
         }
 
         Ok(stale_entries)
