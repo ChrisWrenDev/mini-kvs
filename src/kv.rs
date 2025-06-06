@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use crate::{KvsError, Result};
 
 const MAX_LOG_FILE_SIZE: u64 = 4 * 1024 * 1024; // 4 MB
+const COMPACTION_THREASHOLD: u64 = 1024 * 1024; // 1 MB
 
 enum SegmentStatus {
     Active,     // Currently being written to
@@ -40,6 +41,7 @@ struct Segment {
     file_id: u64,
     offset: u64,
     size: u64,
+    stale_entries: u64,
     status: SegmentStatus,
     reader: BufReader<File>,
     writer: BufWriter<File>,
@@ -69,6 +71,7 @@ impl Segment {
             file_id,
             offset: size,
             size,
+            stale_entries: 0,
             status: SegmentStatus::Active,
             reader: BufReader::new(reader_file),
             writer: BufWriter::new(writer_file),
@@ -94,6 +97,7 @@ impl Segment {
             file_id,
             offset: 0,
             size,
+            stale_entries: 0,
             status,
             reader: BufReader::new(reader_file),
             writer: BufWriter::new(writer_file),
@@ -167,8 +171,7 @@ impl Segment {
             length: value_bytes.len() as u64,
         })
     }
-    fn index(&mut self, index: &mut HashMap<String, CommandPos>) -> Result<u32> {
-        let mut stale_entries = 0;
+    fn index(&mut self, index: &mut HashMap<String, CommandPos>) -> Result<u64> {
         let file_size = self.reader.get_ref().metadata()?.len();
 
         // loop through file
@@ -214,10 +217,12 @@ impl Segment {
 
             // Handle removed key/value pairs (tombstone value)
             if value_size == 0 {
-                stale_entries += 1;
+                // Update stale entries for removed key/value
+                self.stale_entries += 1;
                 continue;
             }
 
+            // Update stale entry if value overwritten
             // Update index
             index.insert(
                 key_value,
@@ -232,7 +237,7 @@ impl Segment {
             self.offset += value_size;
         }
 
-        Ok(stale_entries)
+        Ok(self.stale_entries)
     }
     fn size(&self) -> Result<u64> {
         // Measure if compaction is needed
@@ -271,6 +276,7 @@ pub struct KvStore {
     active: String,
     size: u64,
     index: HashMap<String, CommandPos>,
+    stale_entries: u64,
 }
 
 impl KvStore {
@@ -307,8 +313,14 @@ impl KvStore {
         // Calculate size of log
         let mut size = 0;
 
+        // Calculate stale entires in log
+        let mut stale_entries = 0;
+
         // loop newest to oldest (highest to lowest)
         for id in file_ids {
+            // TODO: Is Sealed status needed? serves no purpose if all non acitve files are
+            // compacted
+
             // Determine status
             let status = if id.to_string() == active {
                 SegmentStatus::Active
@@ -320,16 +332,18 @@ impl KvStore {
             let mut segment = Segment::open(dir_path, id, status)?;
 
             // Update index with segment
-            let stale_entries = segment.index(&mut index)?;
+            let segment_stale_entries = segment.index(&mut index)?;
 
             // Count stale entries (rm, duplicate)
             match segment.status {
-                SegmentStatus::Archived if stale_entries > 0 => {
+                SegmentStatus::Archived if segment_stale_entries > 0 => {
                     // stale entires = sealed
                     segment.status = SegmentStatus::Sealed;
                 }
                 _ => {}
             }
+
+            stale_entries += segment_stale_entries;
 
             // update log size
             size += segment.size;
@@ -352,6 +366,7 @@ impl KvStore {
             segments,
             active,
             size,
+            stale_entries,
             index,
         })
     }
@@ -377,6 +392,7 @@ impl KvStore {
             })
             .map_err(|_| KvsError::KeyNotFound)?;
 
+        // TODO: Update stale entries
         // Update index
         self.index.insert(key, cmd_pos);
 
@@ -405,6 +421,7 @@ impl KvStore {
     }
     /// Remove key/value pair from store
     pub fn remove(&mut self, key: String) -> Result<()> {
+        // TODO: Update state entries
         self.index.remove(&key).ok_or(KvsError::KeyNotFound)?;
 
         let active_segment = self
