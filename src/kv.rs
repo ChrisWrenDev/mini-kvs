@@ -20,21 +20,9 @@ enum SegmentStatus {
     Archived,   // Fully compacted, no longer in use
 }
 
-/// A log entry representing either a key-value insertion or a deletion (tombstone).
-pub enum Entry {
-    /// Represents inserting or updating a key with a value.
-    Set {
-        /// The key to be inserted or updated.
-        key: String,
-        /// The value to associate with the key.
-        value: String,
-    },
-
-    /// Represents removing a key from the store (a tombstone).
-    Remove {
-        /// The key to be removed.
-        key: String,
-    },
+enum Entry {
+    Set { key: String, value: String },
+    Remove { key: String },
 }
 
 struct Segment {
@@ -149,11 +137,17 @@ impl Segment {
             buffer.extend_from_slice(&value_bytes);
         }
 
-        // Serialise value
+        // TODO: Serialise value
 
         // Write to file
         self.writer.write_all(&buffer)?;
         self.writer.flush()?;
+
+        // Update stale_entries if a remove entry
+        // remove entry has a tombstone value (empty)
+        if value_bytes.is_empty() {
+            self.stale_entries += 1;
+        }
 
         // Value offset
         let value_offset = cur_offset + 16 + key_bytes.len() as u64;
@@ -222,16 +216,21 @@ impl Segment {
                 continue;
             }
 
-            // Update stale entry if value overwritten
             // Update index
-            index.insert(
-                key_value,
-                CommandPos {
-                    file_id: self.file_id,
-                    offset: self.offset,
-                    length: value_size,
-                },
-            );
+            // Update stale entry if value overwritten
+            if index
+                .insert(
+                    key_value,
+                    CommandPos {
+                        file_id: self.file_id,
+                        offset: self.offset,
+                        length: value_size,
+                    },
+                )
+                .is_some()
+            {
+                self.stale_entries += 1;
+            };
 
             // Update offset to start of next entry
             self.offset += value_size;
@@ -245,10 +244,6 @@ impl Segment {
         let metadata = file_ref.metadata()?;
         let size = metadata.len();
         Ok(size)
-    }
-    fn compact(&mut self) {
-        // Remove stale entries
-        self.status = SegmentStatus::Compacting;
     }
 }
 
@@ -375,11 +370,6 @@ impl KvStore {
         // Check file size
         self.rollover()?;
 
-        //let key = match &entry {
-        //    Entry::Set { key, .. } => key.clone(),
-        //    Entry::Remove { key } => key.clone(),
-        //};
-
         let active_segment = self
             .segments
             .get_mut(&self.active)
@@ -395,6 +385,8 @@ impl KvStore {
         // TODO: Update stale entries
         // Update index
         self.index.insert(key, cmd_pos);
+
+        // TODO: Check threashold for compaction
 
         Ok(())
     }
@@ -433,6 +425,10 @@ impl KvStore {
             .append(Entry::Remove { key })
             .map_err(|_| KvsError::KeyNotFound)?;
 
+        self.stale_entries += 1;
+
+        // TODO: Check threashold for compaction
+
         Ok(())
     }
     fn rollover(&mut self) -> Result<()> {
@@ -464,6 +460,44 @@ impl KvStore {
 
         // Update active segment
         self.active = new_file_id.to_string();
+
+        Ok(())
+    }
+    fn compact(&mut self) -> Result<()> {
+        // Loop through all archived files
+        // No. keys in index - 1
+
+        for id in 0..self.index.len() {
+            let segment = match self.segments.get_mut(&id.to_string()) {
+                Some(seg) => seg,
+                None => return Ok(()),
+            };
+
+            match segment.status {
+                SegmentStatus::Active => {
+                    continue;
+                }
+                _ => {}
+            }
+
+            // If it meets threshold
+            if segment.stale_entries <= COMPACTION_THREASHOLD {
+                continue;
+            }
+            // Create new file for compaction
+            // Loop through old file (similar logic to build index)
+            // Add entry to new file (only if in key_dir)
+            // Add entry to temp key_dir
+            // End of File
+
+            // Change new file name (.data to .log)
+            // Loop through temp dir and update key_dir
+            // Update file status
+            // Delete old file
+
+            // Calculate number of stale_entries
+            // Recalcualte Log stale_entries (sum all files)
+        }
 
         Ok(())
     }

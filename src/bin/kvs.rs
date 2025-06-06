@@ -1,5 +1,5 @@
 use clap::{Command, arg};
-use kvs::{Entry, KvStore, KvsError, Result};
+use kvs::{KvStore, KvsError, Result};
 use std::env::current_dir;
 use std::process;
 
