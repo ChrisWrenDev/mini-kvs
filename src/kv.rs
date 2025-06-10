@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use std::env::current_dir;
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
@@ -29,7 +30,6 @@ struct Segment {
     file_id: u64,
     offset: u64,
     size: u64,
-    stale_entries: u64,
     status: SegmentStatus,
     reader: BufReader<File>,
     writer: BufWriter<File>,
@@ -59,7 +59,6 @@ impl Segment {
             file_id,
             offset: size,
             size,
-            stale_entries: 0,
             status: SegmentStatus::Active,
             reader: BufReader::new(reader_file),
             writer: BufWriter::new(writer_file),
@@ -85,7 +84,6 @@ impl Segment {
             file_id,
             offset: 0,
             size,
-            stale_entries: 0,
             status,
             reader: BufReader::new(reader_file),
             writer: BufWriter::new(writer_file),
@@ -143,14 +141,8 @@ impl Segment {
         self.writer.write_all(&buffer)?;
         self.writer.flush()?;
 
-        // Update stale_entries if a remove entry
-        // remove entry has a tombstone value (empty)
-        if value_bytes.is_empty() {
-            self.stale_entries += 1;
-        }
-
         // Value offset
-        let value_offset = cur_offset + 16 + key_bytes.len() as u64;
+        let value_offset = cur_offset + 8 + 8 + key_bytes.len() as u64;
 
         // Update segment offset
         self.offset += buffer.len() as u64;
@@ -168,35 +160,34 @@ impl Segment {
     fn index(&mut self, index: &mut HashMap<String, CommandPos>) -> Result<u64> {
         let file_size = self.reader.get_ref().metadata()?.len();
 
-        // loop through file
-        loop {
-            if self.offset + 16 > file_size {
-                break; // not enough for header
-            }
+        let mut stale_entries = 0;
+        let mut read_offset = 0;
 
+        // loop through file
+        while read_offset + 16 <= file_size {
             // Get key/value size
             let key_size_bytes: [u8; 8] = self
-                .read(self.offset, 8)?
+                .read(read_offset, 8)?
                 .try_into()
                 .expect("Expected exactly 8 bytes");
             let key_size = u64::from_le_bytes(key_size_bytes);
 
-            self.offset += 8;
+            read_offset += 8;
 
             let value_size_bytes: [u8; 8] = self
-                .read(self.offset, 8)?
+                .read(read_offset, 8)?
                 .try_into()
                 .expect("Expected exactly 8 bytes");
             let value_size = u64::from_le_bytes(value_size_bytes);
 
-            self.offset += 8;
+            read_offset += 8;
 
-            if self.offset + key_size + value_size > file_size {
+            if read_offset + key_size + value_size > file_size {
                 break; // incomplete entry
             }
 
             // Get key value
-            let key_bytes = match self.read(self.offset, key_size) {
+            let key_bytes = match self.read(read_offset, key_size) {
                 Ok(bytes) => bytes,
                 _ => break, // EOF or read error
             };
@@ -207,12 +198,15 @@ impl Segment {
             };
 
             // Update offset to start of value
-            self.offset += key_size;
+            read_offset += key_size;
+
+            let value_offset = read_offset;
 
             // Handle removed key/value pairs (tombstone value)
             if value_size == 0 {
                 // Update stale entries for removed key/value
-                self.stale_entries += 1;
+                stale_entries += 1;
+                read_offset += value_size;
                 continue;
             }
 
@@ -223,20 +217,21 @@ impl Segment {
                     key_value,
                     CommandPos {
                         file_id: self.file_id,
-                        offset: self.offset,
+                        offset: value_offset,
                         length: value_size,
                     },
                 )
                 .is_some()
             {
-                self.stale_entries += 1;
+                stale_entries += 1;
             };
 
-            // Update offset to start of next entry
-            self.offset += value_size;
+            read_offset += value_size;
         }
+        // Update offset to start of next entry
+        self.offset += file_size;
 
-        Ok(self.stale_entries)
+        Ok(stale_entries)
     }
     fn size(&self) -> Result<u64> {
         // Measure if compaction is needed
@@ -367,9 +362,6 @@ impl KvStore {
     }
     /// Add a key/value pair to store
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        // Check file size
-        self.rollover()?;
-
         let active_segment = self
             .segments
             .get_mut(&self.active)
@@ -382,11 +374,24 @@ impl KvStore {
             })
             .map_err(|_| KvsError::KeyNotFound)?;
 
-        // TODO: Update stale entries
         // Update index
-        self.index.insert(key, cmd_pos);
+        if self.index.insert(key, cmd_pos).is_some() {
+            // Update stale entries for overwrite
+            self.stale_entries += 1;
+        };
 
-        // TODO: Check threashold for compaction
+        // Check threashold for compaction
+        if self.size > COMPACTION_THREASHOLD {
+            self.compact()?;
+            return Ok(());
+        }
+
+        // Check file size
+        let segment_size = active_segment.size().map_err(|_| KvsError::FileNotFound)?;
+
+        if segment_size > MAX_LOG_FILE_SIZE {
+            self.rollover()?;
+        }
 
         Ok(())
     }
@@ -407,6 +412,7 @@ impl KvStore {
 
         // Has all the data (kv length, val length, key, value)
         let value_bytes = segment.read(log_pointer.offset, log_pointer.length)?;
+
         let value = String::from_utf8_lossy(&value_bytes).into_owned();
 
         Ok(Some(value))
@@ -425,26 +431,25 @@ impl KvStore {
             .append(Entry::Remove { key })
             .map_err(|_| KvsError::KeyNotFound)?;
 
+        // Update stale entries for removal
         self.stale_entries += 1;
 
-        // TODO: Check threashold for compaction
+        // Check threashold for compaction
+        if self.size > COMPACTION_THREASHOLD {
+            self.compact()?;
+            return Ok(());
+        }
+
+        // Check file size
+        let segment_size = active_segment.size().map_err(|_| KvsError::FileNotFound)?;
+
+        if segment_size > MAX_LOG_FILE_SIZE {
+            self.rollover()?;
+        }
 
         Ok(())
     }
     fn rollover(&mut self) -> Result<()> {
-        let active_segment = self
-            .segments
-            .get_mut(&self.active)
-            .ok_or(KvsError::FileNotFound)?;
-
-        let segment_size = active_segment.size().map_err(|_| KvsError::FileNotFound)?;
-
-        if segment_size >= MAX_LOG_FILE_SIZE {
-            return Ok(());
-        }
-        // Change status
-        active_segment.status = SegmentStatus::Sealed;
-
         // Create new segment
         let active_file_id = self
             .active
@@ -464,39 +469,42 @@ impl KvStore {
         Ok(())
     }
     fn compact(&mut self) -> Result<()> {
-        // Loop through all archived files
-        // No. keys in index - 1
+        let active_file_id = self
+            .active
+            .parse::<u64>()
+            .map_err(|_| KvsError::FileNotFound)?;
 
-        for id in 0..self.index.len() {
-            let segment = match self.segments.get_mut(&id.to_string()) {
-                Some(seg) => seg,
-                None => return Ok(()),
-            };
+        // Create new active file
+        self.rollover()?;
 
-            match segment.status {
-                SegmentStatus::Active => {
-                    continue;
-                }
-                _ => {}
-            }
+        let keys: Vec<String> = self.index.keys().cloned().collect();
+        // Loop through key_dir
+        for key in keys {
+            // get value
+            let value = self
+                .get(key.clone())
+                .map_err(|_| KvsError::KeyNotFound)?
+                .ok_or(KvsError::KeyNotFound)?;
+            // add value to new file
+            self.set(key, value)?;
+        }
+        // Update stale_entries
+        self.stale_entries = 0;
 
-            // If it meets threshold
-            if segment.stale_entries <= COMPACTION_THREASHOLD {
+        // Remove old files (active and less)
+        for segment_key in self.segments.keys() {
+            let segment_id = segment_key
+                .parse::<u64>()
+                .map_err(|_| KvsError::FileNotFound)?;
+            // ignore new compacted files
+            if segment_id > active_file_id {
                 continue;
             }
-            // Create new file for compaction
-            // Loop through old file (similar logic to build index)
-            // Add entry to new file (only if in key_dir)
-            // Add entry to temp key_dir
-            // End of File
+            let dir_path = current_dir().map_err(|_| KvsError::FileNotFound)?;
+            let file_name = format!("{}.log", segment_key);
+            let path = dir_path.join(file_name);
 
-            // Change new file name (.data to .log)
-            // Loop through temp dir and update key_dir
-            // Update file status
-            // Delete old file
-
-            // Calculate number of stale_entries
-            // Recalcualte Log stale_entries (sum all files)
+            fs::remove_file(path)?;
         }
 
         Ok(())

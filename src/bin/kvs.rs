@@ -33,7 +33,7 @@ fn cli() -> Command {
 
 fn main() -> Result<()> {
     // Build log
-    let path_dir = current_dir().unwrap();
+    let path_dir = current_dir().map_err(|_| KvsError::FileNotFound)?;
     let mut store = KvStore::open(&path_dir)?;
 
     let matches = cli().get_matches();
