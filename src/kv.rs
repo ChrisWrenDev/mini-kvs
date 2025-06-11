@@ -70,19 +70,22 @@ impl Segment {
         let path = dir_path.join(file_name);
 
         // Write handle
-        let writer_file = OpenOptions::new().write(true).open(&path)?;
+        let mut writer_file = OpenOptions::new().write(true).open(&path)?;
 
         // Reader handle
         let reader_file = OpenOptions::new().read(true).open(&path)?;
 
+        // Seek the writer to the end of file
+        let size = writer_file.seek(SeekFrom::End(0))?;
+
         // File size
-        let metadata = writer_file.metadata()?;
-        let size = metadata.len();
+        // let metadata = writer_file.metadata()?;
+        // let size = metadata.len();
 
         // Create Segment
         Ok(Segment {
             file_id,
-            offset: 0,
+            offset: size,
             size,
             status,
             reader: BufReader::new(reader_file),
@@ -93,6 +96,14 @@ impl Segment {
         // Get key-value at a given offset (provided by index)
 
         let mut buffer = vec![0; length as usize];
+
+        // println!(
+        //   "READ: offset:{}, length:{}, buffer:{}, file size: {}",
+        //   offset,
+        //   length,
+        //   buffer.len(),
+        //   self.size()?
+        //);
 
         // Find file offset
         self.reader.seek(SeekFrom::Start(offset))?;
@@ -140,6 +151,7 @@ impl Segment {
         // Write to file
         self.writer.write_all(&buffer)?;
         self.writer.flush()?;
+        self.writer.get_ref().sync_data()?;
 
         // Value offset
         let value_offset = cur_offset + 8 + 8 + key_bytes.len() as u64;
@@ -147,8 +159,15 @@ impl Segment {
         // Update segment offset
         self.offset += buffer.len() as u64;
 
-        // Update file size
-        self.size = self.size()?;
+        // println!(
+        //   "WRITE: full offset: {}, buffer len: {}, value offset: {}, value size: {}, new offset: {}, file size: {}",
+        //   cur_offset,
+        //   buffer.len(),
+        //   value_offset,
+        //   value_bytes.len(),
+        //   self.offset,
+        //   self.writer.get_ref().metadata()?.len()
+        //);
 
         // Update log pointer
         Ok(CommandPos {
@@ -158,13 +177,11 @@ impl Segment {
         })
     }
     fn index(&mut self, index: &mut HashMap<String, CommandPos>) -> Result<u64> {
-        let file_size = self.reader.get_ref().metadata()?.len();
-
         let mut stale_entries = 0;
         let mut read_offset = 0;
 
         // loop through file
-        while read_offset + 16 <= file_size {
+        while read_offset + 16 <= self.size()? {
             // Get key/value size
             let key_size_bytes: [u8; 8] = self
                 .read(read_offset, 8)?
@@ -182,7 +199,7 @@ impl Segment {
 
             read_offset += 8;
 
-            if read_offset + key_size + value_size > file_size {
+            if read_offset + key_size + value_size > self.size()? {
                 break; // incomplete entry
             }
 
@@ -205,10 +222,18 @@ impl Segment {
             // Handle removed key/value pairs (tombstone value)
             if value_size == 0 {
                 // Update stale entries for removed key/value
+                // TODO: Remove from index
+                index.remove(&key_value).ok_or(KvsError::KeyNotFound)?;
+
                 stale_entries += 1;
                 read_offset += value_size;
                 continue;
             }
+
+            // println!(
+            //   "INDEX: value offset: {}, value size: {}",
+            //  value_offset, value_size
+            //);
 
             // Update index
             // Update stale entry if value overwritten
@@ -228,8 +253,6 @@ impl Segment {
 
             read_offset += value_size;
         }
-        // Update offset to start of next entry
-        self.offset += file_size;
 
         Ok(stale_entries)
     }
@@ -419,7 +442,6 @@ impl KvStore {
     }
     /// Remove key/value pair from store
     pub fn remove(&mut self, key: String) -> Result<()> {
-        // TODO: Update state entries
         self.index.remove(&key).ok_or(KvsError::KeyNotFound)?;
 
         let active_segment = self
@@ -477,6 +499,12 @@ impl KvStore {
         // Create new active file
         self.rollover()?;
 
+        // ????
+        for segment in self.segments.values_mut() {
+            segment.writer.flush()?;
+            segment.writer.get_ref().sync_data()?; // Force flush to disk
+        }
+
         let keys: Vec<String> = self.index.keys().cloned().collect();
         // Loop through key_dir
         for key in keys {
@@ -508,9 +536,5 @@ impl KvStore {
         }
 
         Ok(())
-    }
-    /// Size of log
-    pub fn size(self) -> u64 {
-        self.size
     }
 }
