@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 
-use std::env::current_dir;
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
@@ -78,10 +77,6 @@ impl Segment {
         // Seek the writer to the end of file
         let size = writer_file.seek(SeekFrom::End(0))?;
 
-        // File size
-        // let metadata = writer_file.metadata()?;
-        // let size = metadata.len();
-
         // Create Segment
         Ok(Segment {
             file_id,
@@ -96,14 +91,6 @@ impl Segment {
         // Get key-value at a given offset (provided by index)
 
         let mut buffer = vec![0; length as usize];
-
-        // println!(
-        //   "READ: offset:{}, length:{}, buffer:{}, file size: {}",
-        //   offset,
-        //   length,
-        //   buffer.len(),
-        //   self.size()?
-        //);
 
         // Find file offset
         self.reader.seek(SeekFrom::Start(offset))?;
@@ -159,15 +146,8 @@ impl Segment {
         // Update segment offset
         self.offset += buffer.len() as u64;
 
-        // println!(
-        //   "WRITE: full offset: {}, buffer len: {}, value offset: {}, value size: {}, new offset: {}, file size: {}",
-        //   cur_offset,
-        //   buffer.len(),
-        //   value_offset,
-        //   value_bytes.len(),
-        //   self.offset,
-        //   self.writer.get_ref().metadata()?.len()
-        //);
+        // Ensure segment size reflects file size growth
+        self.size = self.offset;
 
         // Update log pointer
         Ok(CommandPos {
@@ -222,18 +202,11 @@ impl Segment {
             // Handle removed key/value pairs (tombstone value)
             if value_size == 0 {
                 // Update stale entries for removed key/value
-                // TODO: Remove from index
                 index.remove(&key_value).ok_or(KvsError::KeyNotFound)?;
-
                 stale_entries += 1;
                 read_offset += value_size;
                 continue;
             }
-
-            // println!(
-            //   "INDEX: value offset: {}, value size: {}",
-            //  value_offset, value_size
-            //);
 
             // Update index
             // Update stale entry if value overwritten
@@ -290,6 +263,7 @@ pub struct KvStore {
     size: u64,
     index: HashMap<String, CommandPos>,
     stale_entries: u64,
+    compaction: bool,
 }
 
 impl KvStore {
@@ -381,6 +355,7 @@ impl KvStore {
             size,
             stale_entries,
             index,
+            compaction: false,
         })
     }
     /// Add a key/value pair to store
@@ -390,6 +365,8 @@ impl KvStore {
             .get_mut(&self.active)
             .ok_or(KvsError::FileNotFound)?;
 
+        let before_size = active_segment.size;
+
         let cmd_pos = active_segment
             .append(Entry::Set {
                 key: key.clone(),
@@ -397,13 +374,17 @@ impl KvStore {
             })
             .map_err(|_| KvsError::KeyNotFound)?;
 
+        let after_size = active_segment.offset;
+        self.size += after_size - before_size;
+
         // Update index
         if self.index.insert(key, cmd_pos).is_some() {
             // Update stale entries for overwrite
             self.stale_entries += 1;
-        };
+        }
 
         // Check threashold for compaction
+        // Prevent recursive compaction
         if self.size > COMPACTION_THREASHOLD {
             self.compact()?;
             return Ok(());
@@ -449,9 +430,14 @@ impl KvStore {
             .get_mut(&self.active)
             .ok_or(KvsError::FileNotFound)?;
 
+        let before_size = active_segment.offset;
+
         active_segment
             .append(Entry::Remove { key })
             .map_err(|_| KvsError::KeyNotFound)?;
+
+        let after_size = active_segment.offset;
+        self.size += after_size - before_size;
 
         // Update stale entries for removal
         self.stale_entries += 1;
@@ -491,21 +477,21 @@ impl KvStore {
         Ok(())
     }
     fn compact(&mut self) -> Result<()> {
-        let active_file_id = self
-            .active
-            .parse::<u64>()
-            .map_err(|_| KvsError::FileNotFound)?;
+        self.compaction = true;
 
-        // Create new active file
+        let old_size = self.size;
+
+        let old_segment_keys: Vec<String> = self.segments.keys().cloned().collect();
+
+        // Get list of current files
+        let keys: Vec<String> = self.index.keys().cloned().collect();
+
+        // Reset size so compaction size can be calculated
+        self.size = 0;
+
+        // Create new active file to write
         self.rollover()?;
 
-        // ????
-        for segment in self.segments.values_mut() {
-            segment.writer.flush()?;
-            segment.writer.get_ref().sync_data()?; // Force flush to disk
-        }
-
-        let keys: Vec<String> = self.index.keys().cloned().collect();
         // Loop through key_dir
         for key in keys {
             // get value
@@ -513,27 +499,56 @@ impl KvStore {
                 .get(key.clone())
                 .map_err(|_| KvsError::KeyNotFound)?
                 .ok_or(KvsError::KeyNotFound)?;
+
             // add value to new file
-            self.set(key, value)?;
+            let active_segment = self
+                .segments
+                .get_mut(&self.active)
+                .ok_or(KvsError::FileNotFound)?;
+
+            let before_size = active_segment.size;
+
+            let cmd_pos = active_segment
+                .append(Entry::Set {
+                    key: key.clone(),
+                    value,
+                })
+                .map_err(|_| KvsError::KeyNotFound)?;
+
+            let after_size = active_segment.offset;
+            self.size += after_size - before_size;
+
+            // Update index
+            self.index.insert(key, cmd_pos);
+
+            // Check file size
+            let segment_size = active_segment.size().map_err(|_| KvsError::FileNotFound)?;
+
+            if segment_size > MAX_LOG_FILE_SIZE {
+                self.rollover()?;
+            }
         }
+
         // Update stale_entries
         self.stale_entries = 0;
 
-        // Remove old files (active and less)
-        for segment_key in self.segments.keys() {
-            let segment_id = segment_key
-                .parse::<u64>()
-                .map_err(|_| KvsError::FileNotFound)?;
-            // ignore new compacted files
-            if segment_id > active_file_id {
-                continue;
-            }
-            let dir_path = current_dir().map_err(|_| KvsError::FileNotFound)?;
-            let file_name = format!("{}.log", segment_key);
-            let path = dir_path.join(file_name);
+        // Drop all file handles before deleting files
+        let mut old_segments: Vec<Segment> = vec![];
 
-            fs::remove_file(path)?;
+        for segment_key in &old_segment_keys {
+            if let Some(seg) = self.segments.remove(segment_key) {
+                old_segments.push(seg);
+            }
         }
+        drop(old_segments);
+
+        // Remove old files (active and less)
+        for segment_key in old_segment_keys {
+            let file_name = format!("{}.log", segment_key);
+            fs::remove_file(self.base_dir.join(file_name))?;
+        }
+
+        self.compaction = false;
 
         Ok(())
     }
