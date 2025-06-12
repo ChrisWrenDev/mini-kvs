@@ -19,6 +19,61 @@ enum Entry {
     Remove { key: String },
 }
 
+impl Entry {
+    fn serialize(&self) -> Vec<u8> {
+        let (key_bytes, value_bytes) = match self {
+            Entry::Set { key, value } => (key.as_bytes(), value.as_bytes()),
+            Entry::Remove { key } => (key.as_bytes(), &[][..]),
+        };
+
+        // key_size
+        let key_size = key_bytes.len().to_le_bytes();
+        // value_size
+        let value_size = value_bytes.len().to_le_bytes();
+
+        // [ksz, vsz, key, value]
+        let mut buffer: Vec<u8> = Vec::with_capacity(16 + key_bytes.len() + value_bytes.len());
+
+        buffer.extend_from_slice(&key_size);
+        buffer.extend_from_slice(&value_size);
+        buffer.extend_from_slice(&key_bytes);
+        if !value_bytes.is_empty() {
+            buffer.extend_from_slice(&value_bytes);
+        }
+
+        buffer
+    }
+    fn deserialize(mut bytes: &[u8]) -> std::io::Result<Self> {
+        use std::io::{Error, ErrorKind};
+
+        let mut ksz_buf = [0u8; 8];
+        let mut vsz_buf = [0u8; 8];
+
+        bytes.read_exact(&mut ksz_buf)?;
+        bytes.read_exact(&mut vsz_buf)?;
+
+        let key_size = u64::from_le_bytes(ksz_buf);
+        let value_size = u64::from_le_bytes(vsz_buf);
+
+        let mut key_bytes = vec![0; key_size as usize];
+        let mut value_bytes = vec![0; value_size as usize];
+
+        bytes.read_exact(&mut key_bytes)?;
+        bytes.read_exact(&mut value_bytes)?;
+
+        let key = String::from_utf8(key_bytes)
+            .map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid UTF-8 in key"))?;
+        let value = String::from_utf8(value_bytes)
+            .map_err(|_| Error::new(ErrorKind::InvalidData, "Invalid UTF-8 in value"))?;
+
+        if value.is_empty() {
+            Ok(Entry::Remove { key })
+        } else {
+            Ok(Entry::Set { key, value })
+        }
+    }
+}
+
 #[derive(Debug)]
 enum SegmentStatus {
     Active,     // Currently being written to
@@ -116,35 +171,12 @@ impl Segment {
         // Current Segment Offset
         let cur_offset = self.offset;
 
-        let (key_bytes, value_bytes) = match entry {
-            Entry::Set { key, value } => (key.into_bytes(), value.into_bytes()),
-            Entry::Remove { key } => (key.into_bytes(), vec![]),
-        };
-
-        // key_size
-        let key_size = key_bytes.len().to_le_bytes();
-        // value_size
-        let value_size = value_bytes.len().to_le_bytes();
-
-        // [ksz, vsz, key, value]
-        let mut buffer: Vec<u8> = Vec::new();
-
-        buffer.extend_from_slice(&key_size);
-        buffer.extend_from_slice(&value_size);
-        buffer.extend_from_slice(&key_bytes);
-        if !value_bytes.is_empty() {
-            buffer.extend_from_slice(&value_bytes);
-        }
-
-        // TODO: Serialise value
+        let buffer = entry.serialize();
 
         // Write to file
         self.writer.write_all(&buffer)?;
         self.writer.flush()?;
         self.writer.get_ref().sync_data()?;
-
-        // Value offset
-        let value_offset = cur_offset + 8 + 8 + key_bytes.len() as u64;
 
         // Update segment offset
         self.offset += buffer.len() as u64;
@@ -155,8 +187,8 @@ impl Segment {
         // Update log pointer
         Ok(CommandPos {
             file_id: self.file_id,
-            offset: value_offset,
-            length: value_bytes.len() as u64,
+            offset: cur_offset,
+            length: buffer.len() as u64,
         })
     }
     fn index(&mut self, index: &mut HashMap<String, CommandPos>) -> Result<u64> {
@@ -165,70 +197,63 @@ impl Segment {
         let current_size = self.size()?;
 
         // loop through file
-        while read_offset + 16 <= current_size {
-            // Get key/value size
-            let key_size_bytes: [u8; 8] = self
-                .read(read_offset, 8)?
-                .try_into()
-                .expect("Expected exactly 8 bytes");
-            let key_size = u64::from_le_bytes(key_size_bytes);
+        while read_offset + 8 + 8 <= current_size {
+            // Calculate size of entry
+            let size_buffer = match self.read(read_offset, 16) {
+                Ok(e) => e,
+                Err(_) => break,
+            };
 
-            read_offset += 8;
+            let key_size = u64::from_le_bytes(size_buffer[0..8].try_into().unwrap());
+            let value_size = u64::from_le_bytes(size_buffer[8..16].try_into().unwrap());
 
-            let value_size_bytes: [u8; 8] = self
-                .read(read_offset, 8)?
-                .try_into()
-                .expect("Expected exactly 8 bytes");
-            let value_size = u64::from_le_bytes(value_size_bytes);
+            let entry_len = 16 + key_size + value_size;
 
-            read_offset += 8;
+            // Read buffer (slightly larger than Entry)
+            let buffer = match self.read(read_offset, entry_len) {
+                Ok(buf) => buf,
+                Err(_) => break, // incomplete or corrupted entry
+            };
 
-            if read_offset + key_size + value_size > current_size {
-                break; // incomplete entry
+            // Deserialize Entry
+            let slice = buffer.as_slice();
+            let entry = match Entry::deserialize(slice) {
+                Ok(e) => e,
+                Err(_) => break,
+            };
+
+            // Size of Entry
+            let mut consumed = 8u64 + 8u64; // ksz + vsz
+
+            match &entry {
+                Entry::Set { key, value } => {
+                    let entry_length = key.len() as u64 + value.len() as u64;
+                    consumed += entry_length;
+
+                    if index
+                        .insert(
+                            key.clone(),
+                            CommandPos {
+                                file_id: self.file_id,
+                                offset: read_offset,
+                                length: consumed,
+                            },
+                        )
+                        .is_some()
+                    {
+                        stale_entries += 1;
+                    }
+                }
+                Entry::Remove { key } => {
+                    consumed += key.len() as u64;
+                    if index.remove(key).is_some() {
+                        stale_entries += 1;
+                    }
+                }
             }
 
-            // Get key value
-            let key_bytes = match self.read(read_offset, key_size) {
-                Ok(bytes) => bytes,
-                _ => break, // EOF or read error
-            };
-
-            let key_value = match String::from_utf8(key_bytes) {
-                Ok(s) => s,
-                Err(_) => break, // Skip invalid UTF-8 key
-            };
-
-            // Update offset to start of value
-            read_offset += key_size;
-
-            let value_offset = read_offset;
-
-            // Handle removed key/value pairs (tombstone value)
-            if value_size == 0 {
-                // Update stale entries for removed key/value
-                index.remove(&key_value).ok_or(KvsError::KeyNotFound)?;
-                stale_entries += 1;
-                read_offset += value_size;
-                continue;
-            }
-
-            // Update index
-            // Update stale entry if value overwritten
-            if index
-                .insert(
-                    key_value,
-                    CommandPos {
-                        file_id: self.file_id,
-                        offset: value_offset,
-                        length: value_size,
-                    },
-                )
-                .is_some()
-            {
-                stale_entries += 1;
-            };
-
-            read_offset += value_size;
+            // Update read offset
+            read_offset += consumed;
         }
 
         Ok(stale_entries)
@@ -359,6 +384,10 @@ impl KvStore {
     }
     /// Add a key/value pair to store
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
+        if value.is_empty() {
+            return Err(KvsError::EmptyValue);
+        }
+
         let active_segment = self
             .segments
             .get_mut(&self.active)
@@ -414,11 +443,15 @@ impl KvStore {
         };
 
         // Has all the data (kv length, val length, key, value)
-        let value_bytes = segment.read(log_pointer.offset, log_pointer.length)?;
+        let bytes = segment.read(log_pointer.offset, log_pointer.length)?;
 
-        let value = String::from_utf8_lossy(&value_bytes).into_owned();
+        let entry = Entry::deserialize(&bytes)?;
 
-        Ok(Some(value))
+        if let Entry::Set { value, .. } = entry {
+            Ok(Some(value))
+        } else {
+            Ok(None)
+        }
     }
     /// Remove key/value pair from store
     pub fn remove(&mut self, key: String) -> Result<()> {
