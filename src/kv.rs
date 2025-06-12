@@ -11,8 +11,15 @@ use std::path::{Path, PathBuf};
 use crate::{KvsError, Result};
 
 const MAX_LOG_FILE_SIZE: u64 = 4 * 1024 * 1024; // 4 MB
-const COMPACTION_THREASHOLD: u64 = 1024 * 1024; // 1 MB
+const COMPACTION_THRESHOLD: u64 = 1024 * 1024; // 1 MB
 
+#[derive(Debug)]
+enum Entry {
+    Set { key: String, value: String },
+    Remove { key: String },
+}
+
+#[derive(Debug)]
 enum SegmentStatus {
     Active,     // Currently being written to
     Sealed,     // Closed to writes, may be compacted
@@ -20,11 +27,7 @@ enum SegmentStatus {
     Archived,   // Fully compacted, no longer in use
 }
 
-enum Entry {
-    Set { key: String, value: String },
-    Remove { key: String },
-}
-
+#[derive(Debug)]
 struct Segment {
     file_id: u64,
     offset: u64,
@@ -37,7 +40,7 @@ struct Segment {
 impl Segment {
     fn new(dir_path: &Path, file_id: u64) -> Result<Segment> {
         // Create empty file
-        let file_name = format!("{}.log", file_id);
+        let file_name = format!("{file_id}.log");
         let path = dir_path.join(file_name);
 
         // Write handle
@@ -65,7 +68,7 @@ impl Segment {
     }
     fn open(dir_path: &Path, file_id: u64, status: SegmentStatus) -> Result<Segment> {
         // Create empty file
-        let file_name = format!("{}.log", file_id);
+        let file_name = format!("{file_id}.log");
         let path = dir_path.join(file_name);
 
         // Write handle
@@ -159,9 +162,10 @@ impl Segment {
     fn index(&mut self, index: &mut HashMap<String, CommandPos>) -> Result<u64> {
         let mut stale_entries = 0;
         let mut read_offset = 0;
+        let current_size = self.size()?;
 
         // loop through file
-        while read_offset + 16 <= self.size()? {
+        while read_offset + 16 <= current_size {
             // Get key/value size
             let key_size_bytes: [u8; 8] = self
                 .read(read_offset, 8)?
@@ -179,7 +183,7 @@ impl Segment {
 
             read_offset += 8;
 
-            if read_offset + key_size + value_size > self.size()? {
+            if read_offset + key_size + value_size > current_size {
                 break; // incomplete entry
             }
 
@@ -238,6 +242,7 @@ impl Segment {
     }
 }
 
+#[derive(Debug)]
 struct CommandPos {
     file_id: u64, // Which file
     offset: u64,  // Where in the file
@@ -300,14 +305,11 @@ impl KvStore {
         // Calculate size of log
         let mut size = 0;
 
-        // Calculate stale entires in log
+        // Calculate stale entries in log
         let mut stale_entries = 0;
 
         // loop newest to oldest (highest to lowest)
         for id in file_ids {
-            // TODO: Is Sealed status needed? serves no purpose if all non acitve files are
-            // compacted
-
             // Determine status
             let status = if id.to_string() == active {
                 SegmentStatus::Active
@@ -322,12 +324,9 @@ impl KvStore {
             let segment_stale_entries = segment.index(&mut index)?;
 
             // Count stale entries (rm, duplicate)
-            match segment.status {
-                SegmentStatus::Archived if segment_stale_entries > 0 => {
-                    // stale entires = sealed
-                    segment.status = SegmentStatus::Sealed;
-                }
-                _ => {}
+            if matches!(segment.status, SegmentStatus::Archived) && segment_stale_entries > 0 {
+                // stale entries = sealed
+                segment.status = SegmentStatus::Sealed;
             }
 
             stale_entries += segment_stale_entries;
@@ -342,7 +341,7 @@ impl KvStore {
         // If no files, create one
         if segments.is_empty() {
             let file_id = 1;
-            active = file_id.to_owned().to_string();
+            active = format!("{file_id}");
             let segment = Segment::new(&base_dir, file_id)?;
             segments.insert(active.clone(), segment);
         }
@@ -383,9 +382,9 @@ impl KvStore {
             self.stale_entries += 1;
         }
 
-        // Check threashold for compaction
+        // Check threshold for compaction
         // Prevent recursive compaction
-        if self.size > COMPACTION_THREASHOLD {
+        if self.size > COMPACTION_THRESHOLD {
             self.compact()?;
             return Ok(());
         }
@@ -442,8 +441,8 @@ impl KvStore {
         // Update stale entries for removal
         self.stale_entries += 1;
 
-        // Check threashold for compaction
-        if self.size > COMPACTION_THREASHOLD {
+        // Check threshold for compaction
+        if self.size > COMPACTION_THRESHOLD {
             self.compact()?;
             return Ok(());
         }
@@ -466,8 +465,8 @@ impl KvStore {
 
         let new_file_id = 1 + active_file_id;
 
-        let new_segment =
-            Segment::new(&self.base_dir, new_file_id).map_err(|_| KvsError::FileNotFound)?;
+        let new_segment = Segment::new(self.base_dir.as_path(), new_file_id)
+            .map_err(|_| KvsError::FileNotFound)?;
 
         self.segments.insert(new_file_id.to_string(), new_segment);
 
@@ -478,8 +477,6 @@ impl KvStore {
     }
     fn compact(&mut self) -> Result<()> {
         self.compaction = true;
-
-        let old_size = self.size;
 
         let old_segment_keys: Vec<String> = self.segments.keys().cloned().collect();
 
@@ -544,7 +541,7 @@ impl KvStore {
 
         // Remove old files (active and less)
         for segment_key in old_segment_keys {
-            let file_name = format!("{}.log", segment_key);
+            let file_name = format!("{segment_key}.log");
             fs::remove_file(self.base_dir.join(file_name))?;
         }
 
