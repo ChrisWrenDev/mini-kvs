@@ -36,6 +36,10 @@ This project is divided into **five stages**, each introducing new concepts and 
 
 ---
 
+🔲 TODO
+🔄 In Progress 
+✅ Done 
+
 ### 🧩 Project 1: Basic Storage Engine
 
 | Task                                   | Status       | Notes                             |
@@ -54,7 +58,13 @@ This project is divided into **five stages**, each introducing new concepts and 
 
 | Task                                   | Status       | Notes                             |
 |----------------------------------------|--------------|-----------------------------------|
-| Name                | 🔄 In Progress | description  |
+| Part 1: Error handling                 | ✅ Done      | description  |
+| Part 2: How the log behaves            | ✅ Done      | description  |
+| Part 3: Writing to the log             | ✅ Done      | description  |
+| Part 4: Reading from the log           | ✅ Done      | description  |
+| Part 5: Storing log pointers in index  | ✅ Done      | description  |
+| Part 6: Stateless vs Stateful          | ✅ Done      | description  |
+| Part 7: Compacting the log             | ✅ Done      | description  |
 
 ---
 
@@ -62,7 +72,12 @@ This project is divided into **five stages**, each introducing new concepts and 
 
 | Task                                   | Status       | Notes                             |
 |----------------------------------------|--------------|-----------------------------------|
-| Name               |  🔲 TODO     | description  |
+| Part 1: Command line parsing           |  🔲 TODO     | description  |
+| Part 2: Logging                        |  🔲 TODO     | description  |
+| Part 3: Client-server networking setup |  🔲 TODO     | description  |
+| Part 4: Commands across the network    |  🔲 TODO     | description  |
+| Part 5: Pluggable storage engines      |  🔲 TODO     | description  |
+| Part 6: Benchmarking                   |  🔲 TODO     | description  |
 
 ---
 
@@ -70,7 +85,14 @@ This project is divided into **five stages**, each introducing new concepts and 
 
 | Task                                   | Status       | Notes                             |
 |----------------------------------------|--------------|-----------------------------------|
-| Name             |  🔲 TODO     | description  |
+| Part 1: Multithreading                 |  🔲 TODO     | description  |
+| Part 2: Creating a shared KvsEngine    |  🔲 TODO     | description  |
+| Part 3: Add multithreading to KvServer |  🔲 TODO     | description  |
+| Part 4: Creating a thread pool         |  🔲 TODO     | description  |
+| Part 5: Abstracted thread pools        |  🔲 TODO     | description  |
+| Part 6: Evaluating thread pool         |  🔲 TODO     | description  |
+| Part 7: Evaluating other thread pools and engines |  🔲 TODO     | description  |
+| Part 8: Lock-free readers              |  🔲 TODO     | description  |
 
 ---
 
@@ -78,7 +100,13 @@ This project is divided into **five stages**, each introducing new concepts and 
 
 | Task                                   | Status       | Notes                             |
 |----------------------------------------|--------------|-----------------------------------|
-| Name               | 🔲 TODO      | description  |
+| Part 1: Introducing Tokio to the client | 🔲 TODO      | description  |
+| Part 2: Convert KvsClient to boxed futures |  🔲 TODO     | description  |
+| Part 3: KvsClient with explicit future types |  🔲 TODO     | description  |
+| Part 4: KvsClient with anonymous future types |  🔲 TODO     | description  |
+| Part 5: Making ThreadPool sharable |  🔲 TODO     | description  |
+| Part 6: Converting KvsEngine to futures |  🔲 TODO     | description  |
+| Part 7: Driving KvsEngine with tokio |  🔲 TODO     | description  |
 
 ---
 
