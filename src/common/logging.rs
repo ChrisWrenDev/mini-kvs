@@ -24,5 +24,6 @@ pub fn init_logging() {
     tracing_subscriber::registry()
         .with(env_filter)
         .with(fmt_layer)
-        .init();
+        .try_init()
+        .expect("Failed to set global default subscriber");
 }

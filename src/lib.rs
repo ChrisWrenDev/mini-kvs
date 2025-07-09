@@ -1,7 +1,9 @@
-pub use error::{KvsError, Result};
-pub use logging::init_logging;
+pub use client::KvsClient;
+pub use common::{KvsError, Result, init_logging};
+pub use server::KvsServer;
 pub use storage::{KvMemory, KvStore};
 
-mod error;
-mod logging;
+mod client;
+mod common;
+mod server;
 mod storage;

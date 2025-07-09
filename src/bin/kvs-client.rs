@@ -1,5 +1,5 @@
 use clap::{Command, arg, value_parser};
-use kvs::{KvStore, KvsError, Result, init_logging};
+use kvs::{KvStore, KvsClient, KvsError, Result};
 use std::env::current_dir;
 use std::net::SocketAddr;
 use std::process;
@@ -23,7 +23,7 @@ fn cli() -> Command {
                         .value_parser(value_parser!(SocketAddr))
                         .num_args(1)
                         .require_equals(true)
-                        .default_missing_value(DEFAULT_ADDRESS),
+                        .default_value(DEFAULT_ADDRESS),
                 )
                 .arg_required_else_help(true),
         )
@@ -36,7 +36,7 @@ fn cli() -> Command {
                         .value_parser(value_parser!(SocketAddr))
                         .num_args(1)
                         .require_equals(true)
-                        .default_missing_value(DEFAULT_ADDRESS),
+                        .default_value(DEFAULT_ADDRESS),
                 )
                 .arg_required_else_help(true),
         )
@@ -49,15 +49,13 @@ fn cli() -> Command {
                         .value_parser(value_parser!(SocketAddr))
                         .num_args(1)
                         .require_equals(true)
-                        .default_missing_value(DEFAULT_ADDRESS),
+                        .default_value(DEFAULT_ADDRESS),
                 )
                 .arg_required_else_help(true),
         )
 }
 
 fn main() -> Result<()> {
-    init_logging();
-
     // Build log
     let path_dir = current_dir().map_err(|_| KvsError::FileNotFound)?;
     let mut store = KvStore::open(&path_dir)?;
@@ -68,13 +66,15 @@ fn main() -> Result<()> {
         Some(("set", matches)) => {
             let key = matches.get_one::<String>("KEY").expect("Required");
             let value = matches.get_one::<String>("VALUE").expect("Required");
-            let addr = matches.get_one::<SocketAddr>("ADDR").expect("Required");
+            let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
+
+            let _client = KvsClient::connect(*addr)?;
 
             store.set(key.to_owned(), value.to_owned())?;
         }
         Some(("get", matches)) => {
             let key = matches.get_one::<String>("KEY").expect("Required");
-            let addr = matches.get_one::<SocketAddr>("ADDR").expect("Required");
+            let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
 
             let value = store.get(key.to_string());
             match value {
@@ -86,7 +86,7 @@ fn main() -> Result<()> {
         }
         Some(("rm", matches)) => {
             let key = matches.get_one::<String>("KEY").expect("Required");
-            let addr = matches.get_one::<SocketAddr>("ADDR").expect("Required");
+            let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
 
             match store.remove(key.clone()) {
                 Ok(()) => {}
