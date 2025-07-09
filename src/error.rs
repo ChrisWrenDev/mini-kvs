@@ -1,5 +1,4 @@
 use failure::Fail;
-use serde_json;
 use std::io;
 
 #[derive(Fail, Debug)]

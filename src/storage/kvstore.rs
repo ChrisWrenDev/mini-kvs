@@ -276,14 +276,23 @@ struct CommandPos {
 
 /// KvStore creates HashMap of key/value pairs
 ///
-/// # Examples
+/// # Example
 ///
 /// ```
-/// let store = KvStore::new();
-/// store.set("fruit".to_owned(), "apple".to_owned());
-/// let fruit = store.get("fruit".to_owned());
+/// use tempfile::TempDir;
+/// use kvs::{KvStore, Result};
 ///
-/// assert_eq!(fruit, Some("apple".to_owned()));
+/// fn main() -> Result<()> {
+///     let temp_dir = TempDir::new().expect("unable to create temporary working directory");
+///     let mut store = KvStore::open(temp_dir.path())?;
+///
+///     store.set("language".to_string(), "Rust".to_string())?;
+///     assert_eq!(store.get("language".to_string())?, Some("Rust".to_string()));
+///
+///     store.remove("language".to_string())?;
+///     assert_eq!(store.get("language".to_string())?, None);
+///     Ok(())
+/// }
 /// ```
 #[derive(Default)]
 pub struct KvStore {
