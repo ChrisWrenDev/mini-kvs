@@ -1,5 +1,5 @@
 use clap::{Command, arg, value_parser};
-use kvs::{KvStore, KvsError, Result};
+use kvs::{KvStore, KvsError, Result, init_logging};
 use std::env::current_dir;
 use std::net::SocketAddr;
 use std::process;
@@ -56,6 +56,8 @@ fn cli() -> Command {
 }
 
 fn main() -> Result<()> {
+    init_logging();
+
     // Build log
     let path_dir = current_dir().map_err(|_| KvsError::FileNotFound)?;
     let mut store = KvStore::open(&path_dir)?;

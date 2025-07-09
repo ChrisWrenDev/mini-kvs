@@ -1,5 +1,5 @@
 use clap::{Command, ValueEnum, arg, value_parser};
-use kvs::{KvStore, KvsError, Result};
+use kvs::{KvStore, KvsError, Result, init_logging};
 use std::env::current_dir;
 use std::net::SocketAddr;
 use std::process;
@@ -34,6 +34,8 @@ fn cli() -> Command {
 }
 
 fn main() -> Result<()> {
+    init_logging();
+
     let matches = cli().get_matches();
     let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
     let engine = matches.get_one::<Engine>("engine").expect("Required");
