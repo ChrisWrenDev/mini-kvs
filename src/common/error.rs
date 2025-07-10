@@ -9,6 +9,9 @@ pub enum KvsError {
     #[fail(display = "Serialization or deserialization error: {}", _0)]
     Serde(#[cause] serde_json::Error),
 
+    #[fail(display = "Deserialization error: {}", _0)]
+    Toml(#[cause] toml::de::Error),
+
     #[fail(display = "Key not found")]
     KeyNotFound,
 
@@ -45,5 +48,11 @@ impl From<io::Error> for KvsError {
 impl From<serde_json::Error> for KvsError {
     fn from(err: serde_json::Error) -> Self {
         KvsError::Serde(err)
+    }
+}
+
+impl From<toml::de::Error> for KvsError {
+    fn from(err: toml::de::Error) -> Self {
+        KvsError::Toml(err)
     }
 }

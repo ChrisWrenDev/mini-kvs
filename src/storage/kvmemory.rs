@@ -1,3 +1,4 @@
+use crate::{Result, StoreTrait};
 use std::collections::HashMap;
 
 /// The `KvStore` stores string key/value pairs.
@@ -25,23 +26,26 @@ impl KvMemory {
             map: HashMap::new(),
         }
     }
-
+}
+impl StoreTrait for KvMemory {
     /// Sets the value of a string key to a string.
     ///
     /// If the key already exists, the previous value will be overwritten.
-    pub fn set(&mut self, key: String, value: String) {
+    fn set(&mut self, key: String, value: String) -> Result<()> {
         self.map.insert(key, value);
+        Ok(())
     }
 
     /// Gets the string value of a given string key.
     ///
     /// Returns `None` if the given key does not exist.
-    pub fn get(&self, key: String) -> Option<String> {
-        self.map.get(&key).cloned()
+    fn get(&mut self, key: String) -> Result<Option<String>> {
+        Ok(self.map.get(&key).cloned())
     }
 
     /// Remove a given key.
-    pub fn remove(&mut self, key: String) {
+    fn remove(&mut self, key: String) -> Result<()> {
         self.map.remove(&key);
+        Ok(())
     }
 }

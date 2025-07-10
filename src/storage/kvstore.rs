@@ -8,7 +8,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-use crate::{KvsError, Result};
+use crate::{KvsError, Result, StoreTrait};
 
 const MAX_LOG_FILE_SIZE: u64 = 4 * 1024 * 1024; // 4 MB
 const COMPACTION_THRESHOLD: u64 = 1024 * 1024; // 1 MB
@@ -391,113 +391,6 @@ impl KvStore {
             compaction: false,
         })
     }
-    /// Add a key/value pair to store
-    pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        if value.is_empty() {
-            return Err(KvsError::EmptyValue);
-        }
-
-        let active_segment = self
-            .segments
-            .get_mut(&self.active)
-            .ok_or(KvsError::FileNotFound)?;
-
-        let before_size = active_segment.size;
-
-        let cmd_pos = active_segment
-            .append(Entry::Set {
-                key: key.clone(),
-                value,
-            })
-            .map_err(|_| KvsError::KeyNotFound)?;
-
-        let after_size = active_segment.offset;
-        self.size += after_size - before_size;
-
-        // Update index
-        if self.index.insert(key, cmd_pos).is_some() {
-            // Update stale entries for overwrite
-            self.stale_entries += 1;
-        }
-
-        // Check threshold for compaction
-        // Prevent recursive compaction
-        if self.size > COMPACTION_THRESHOLD {
-            self.compact()?;
-            return Ok(());
-        }
-
-        // Check file size
-        let segment_size = active_segment.size().map_err(|_| KvsError::FileNotFound)?;
-
-        if segment_size > MAX_LOG_FILE_SIZE {
-            self.rollover()?;
-        }
-
-        Ok(())
-    }
-    /// Get a value from store using key
-    pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        // Get log pointer from index
-        let log_pointer = match self.index.get(&key) {
-            Some(ptr) => ptr,
-            None => return Ok(None),
-        };
-
-        let file_id = log_pointer.file_id.to_string();
-
-        let segment = match self.segments.get_mut(&file_id) {
-            Some(seg) => seg,
-            None => return Ok(None),
-        };
-
-        // Has all the data (kv length, val length, key, value)
-        let bytes = segment.read(log_pointer.offset, log_pointer.length)?;
-
-        let entry = Entry::deserialize(&bytes)?;
-
-        if let Entry::Set { value, .. } = entry {
-            Ok(Some(value))
-        } else {
-            Ok(None)
-        }
-    }
-    /// Remove key/value pair from store
-    pub fn remove(&mut self, key: String) -> Result<()> {
-        self.index.remove(&key).ok_or(KvsError::KeyNotFound)?;
-
-        let active_segment = self
-            .segments
-            .get_mut(&self.active)
-            .ok_or(KvsError::FileNotFound)?;
-
-        let before_size = active_segment.offset;
-
-        active_segment
-            .append(Entry::Remove { key })
-            .map_err(|_| KvsError::KeyNotFound)?;
-
-        let after_size = active_segment.offset;
-        self.size += after_size - before_size;
-
-        // Update stale entries for removal
-        self.stale_entries += 1;
-
-        // Check threshold for compaction
-        if self.size > COMPACTION_THRESHOLD {
-            self.compact()?;
-            return Ok(());
-        }
-
-        // Check file size
-        let segment_size = active_segment.size().map_err(|_| KvsError::FileNotFound)?;
-
-        if segment_size > MAX_LOG_FILE_SIZE {
-            self.rollover()?;
-        }
-
-        Ok(())
-    }
     fn rollover(&mut self) -> Result<()> {
         // Create new segment
         let active_file_id = self
@@ -588,6 +481,116 @@ impl KvStore {
         }
 
         self.compaction = false;
+
+        Ok(())
+    }
+}
+
+impl StoreTrait for KvStore {
+    /// Add a key/value pair to store
+    fn set(&mut self, key: String, value: String) -> Result<()> {
+        if value.is_empty() {
+            return Err(KvsError::EmptyValue);
+        }
+
+        let active_segment = self
+            .segments
+            .get_mut(&self.active)
+            .ok_or(KvsError::FileNotFound)?;
+
+        let before_size = active_segment.size;
+
+        let cmd_pos = active_segment
+            .append(Entry::Set {
+                key: key.clone(),
+                value,
+            })
+            .map_err(|_| KvsError::KeyNotFound)?;
+
+        let after_size = active_segment.offset;
+        self.size += after_size - before_size;
+
+        // Update index
+        if self.index.insert(key, cmd_pos).is_some() {
+            // Update stale entries for overwrite
+            self.stale_entries += 1;
+        }
+
+        // Check threshold for compaction
+        // Prevent recursive compaction
+        if self.size > COMPACTION_THRESHOLD {
+            self.compact()?;
+            return Ok(());
+        }
+
+        // Check file size
+        let segment_size = active_segment.size().map_err(|_| KvsError::FileNotFound)?;
+
+        if segment_size > MAX_LOG_FILE_SIZE {
+            self.rollover()?;
+        }
+
+        Ok(())
+    }
+    /// Get a value from store using key
+    fn get(&mut self, key: String) -> Result<Option<String>> {
+        // Get log pointer from index
+        let log_pointer = match self.index.get(&key) {
+            Some(ptr) => ptr,
+            None => return Ok(None),
+        };
+
+        let file_id = log_pointer.file_id.to_string();
+
+        let segment = match self.segments.get_mut(&file_id) {
+            Some(seg) => seg,
+            None => return Ok(None),
+        };
+
+        // Has all the data (kv length, val length, key, value)
+        let bytes = segment.read(log_pointer.offset, log_pointer.length)?;
+
+        let entry = Entry::deserialize(&bytes)?;
+
+        if let Entry::Set { value, .. } = entry {
+            Ok(Some(value))
+        } else {
+            Ok(None)
+        }
+    }
+    /// Remove key/value pair from store
+    fn remove(&mut self, key: String) -> Result<()> {
+        self.index.remove(&key).ok_or(KvsError::KeyNotFound)?;
+
+        let active_segment = self
+            .segments
+            .get_mut(&self.active)
+            .ok_or(KvsError::FileNotFound)?;
+
+        let before_size = active_segment.offset;
+
+        active_segment
+            .append(Entry::Remove { key })
+            .map_err(|_| KvsError::KeyNotFound)?;
+
+        let after_size = active_segment.offset;
+        self.size += after_size - before_size;
+
+        // Update stale entries for removal
+        self.stale_entries += 1;
+
+        // Check threshold for compaction
+        if self.size > COMPACTION_THRESHOLD {
+            self.compact()?;
+            return Ok(());
+        }
+
+        // Check file size
+        let segment_size = active_segment.size().map_err(|_| KvsError::FileNotFound)?;
+
+        if segment_size > MAX_LOG_FILE_SIZE {
+            self.rollover()?;
+        }
 
         Ok(())
     }

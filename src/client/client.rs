@@ -2,10 +2,10 @@ use crate::Result;
 use std::net::{SocketAddr, TcpStream};
 use tracing::{error, info};
 
-pub struct KvsClient {}
+pub struct KvsClient;
 
 impl KvsClient {
-    pub fn connect(addr: SocketAddr) -> Result<()> {
+    pub fn connect(&self, addr: SocketAddr) -> Result<()> {
         let stream = TcpStream::connect(addr);
 
         match stream {

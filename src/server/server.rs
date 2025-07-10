@@ -1,17 +1,19 @@
-use crate::{KvStore, Result};
+use crate::{Result, ServerTrait, StoreTrait};
 use std::net::{SocketAddr, TcpListener};
 use tracing::{error, info};
 
-pub struct KvsServer {
-    addr: SocketAddr,
-    engine: KvStore,
+pub struct KvsServer<E: StoreTrait> {
+    pub addr: SocketAddr,
+    pub engine: E,
 }
 
-impl KvsServer {
-    pub fn new(addr: SocketAddr, engine: KvStore) -> KvsServer {
+impl<E: StoreTrait> KvsServer<E> {
+    pub fn new(addr: SocketAddr, engine: E) -> KvsServer<E> {
         KvsServer { addr, engine }
     }
-    pub fn run(self) -> Result<()> {
+}
+impl<E: StoreTrait> ServerTrait for KvsServer<E> {
+    fn run(&self) -> Result<()> {
         info!("Server starting at {}", self.addr);
         let listener = TcpListener::bind(self.addr)?;
 

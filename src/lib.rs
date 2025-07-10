@@ -1,9 +1,15 @@
-pub use client::KvsClient;
+pub use client::Client;
 pub use common::{KvsError, Result, init_logging};
-pub use server::KvsServer;
-pub use storage::{KvMemory, KvStore};
+pub use config::Config;
+pub use protocols::Protocol;
+pub use serialization::Serialization;
+pub use server::{Server, ServerTrait};
+pub use storage::{Storage, StoreTrait};
 
 mod client;
 mod common;
+mod config;
+mod protocols;
+mod serialization;
 mod server;
 mod storage;
