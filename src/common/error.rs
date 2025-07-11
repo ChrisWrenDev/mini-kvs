@@ -12,6 +12,9 @@ pub enum KvsError {
     #[fail(display = "Deserialization error: {}", _0)]
     Toml(#[cause] toml::de::Error),
 
+    #[fail(display = "Invalid UTF-8: {}", _0)]
+    Utf8(#[cause] std::str::Utf8Error),
+
     #[fail(display = "Key not found")]
     KeyNotFound,
 
@@ -35,6 +38,9 @@ pub enum KvsError {
 
     #[fail(display = "Corrupted or incomplete log data")]
     CorruptedLog,
+
+    #[fail(display = "Protocol error: {}", _0)]
+    Protocol(String),
 }
 
 pub type Result<T> = std::result::Result<T, KvsError>;
@@ -54,5 +60,23 @@ impl From<serde_json::Error> for KvsError {
 impl From<toml::de::Error> for KvsError {
     fn from(err: toml::de::Error) -> Self {
         KvsError::Toml(err)
+    }
+}
+
+impl From<std::str::Utf8Error> for KvsError {
+    fn from(err: std::str::Utf8Error) -> Self {
+        KvsError::Utf8(err)
+    }
+}
+
+impl From<String> for KvsError {
+    fn from(s: String) -> Self {
+        KvsError::Protocol(s)
+    }
+}
+
+impl From<&str> for KvsError {
+    fn from(s: &str) -> Self {
+        KvsError::Protocol(s.to_string())
     }
 }

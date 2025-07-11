@@ -9,7 +9,7 @@ pub enum Request {
 }
 
 pub enum Response {
-    Value(Option<String>),
+    Value(String),
     Ok,
     NotFound,
     Error(String),
