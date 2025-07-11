@@ -1,5 +1,5 @@
 use clap::{Command, arg, value_parser};
-use kvs::{KvStore, KvsClient, KvsError, Result};
+use kvs::{Client, Config, KvsError, Request, Result, Storage};
 use std::env::current_dir;
 use std::net::SocketAddr;
 use std::process;
@@ -57,8 +57,9 @@ fn cli() -> Command {
 
 fn main() -> Result<()> {
     // Build log
+    let config = Config::from_file("../config/config.toml")?;
     let path_dir = current_dir().map_err(|_| KvsError::FileNotFound)?;
-    let mut store = KvStore::open(&path_dir)?;
+    let mut store = Storage::build(&config, &path_dir)?;
 
     let matches = cli().get_matches();
 
@@ -68,34 +69,45 @@ fn main() -> Result<()> {
             let value = matches.get_one::<String>("VALUE").expect("Required");
             let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
 
-            let _client = KvsClient::connect(*addr)?;
+            let mut client = Client::connect(&config, addr.clone())?;
+            let request: Request = Request::Set {
+                key: key.clone(),
+                value: value.clone(),
+            };
+            client.send(&config, request)?;
 
-            store.set(key.to_owned(), value.to_owned())?;
+            // store.set(key.to_owned(), value.to_owned())?;
         }
         Some(("get", matches)) => {
             let key = matches.get_one::<String>("KEY").expect("Required");
             let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
 
-            let value = store.get(key.to_string());
-            match value {
-                Ok(Some(val)) => println!("{}", val),
-                Ok(None) | Err(_) => {
-                    println!("Key not found");
-                }
-            }
+            let client = Client::connect(&config, addr.clone())?;
+            let cmd: Request = Request::Get { key: key.clone() };
+
+            // let value = store.get(key.to_string());
+            // match value {
+            //     Ok(Some(val)) => println!("{}", val),
+            //     Ok(None) | Err(_) => {
+            //         println!("Key not found");
+            //     }
+            // }
         }
         Some(("rm", matches)) => {
             let key = matches.get_one::<String>("KEY").expect("Required");
             let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
 
-            match store.remove(key.clone()) {
-                Ok(()) => {}
-                Err(KvsError::KeyNotFound) => {
-                    println!("Key not found");
-                    process::exit(1);
-                }
-                Err(e) => return Err(e),
-            }
+            let client = Client::connect(&config, addr.clone())?;
+            let cmd: Request = Request::Remove { key: key.clone() };
+
+            // match store.remove(key.clone()) {
+            //     Ok(()) => {}
+            //     Err(KvsError::KeyNotFound) => {
+            //         println!("Key not found");
+            //         process::exit(1);
+            //     }
+            //     Err(e) => return Err(e),
+            // }
         }
         _ => unreachable!(),
     }

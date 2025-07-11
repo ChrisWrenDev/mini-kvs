@@ -1,5 +1,5 @@
 use clap::{Command, ValueEnum, arg, value_parser};
-use kvs::{KvStore, KvsError, KvsServer, Result};
+use kvs::{Config, KvsError, Result, Server, Storage};
 use std::env::current_dir;
 use std::net::SocketAddr;
 use tracing::{Level, info};
@@ -44,11 +44,12 @@ fn main() -> Result<()> {
     info!("Using address: {}", addr);
     info!("Using engine: {:?}", engine);
 
+    let config = Config::from_file("../config/config.toml")?;
+
     let path_dir = current_dir().map_err(|_| KvsError::FileNotFound)?;
+    let store = Storage::build(&config, path_dir.as_path())?;
 
-    let store = KvStore::open(path_dir.as_path())?;
-
-    let _server = KvsServer::new(*addr, store);
+    Server::build(&config, addr.clone(), store)?.run();
 
     Ok(())
 }

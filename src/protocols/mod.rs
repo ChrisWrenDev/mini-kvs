@@ -2,12 +2,14 @@ use crate::{Config, Result};
 
 mod resp;
 
+#[derive(Debug)]
 pub enum Request {
     Get { key: String },
     Set { key: String, value: String },
     Remove { key: String },
 }
 
+#[derive(Debug)]
 pub enum Response {
     Value(String),
     Ok,
@@ -23,20 +25,18 @@ pub trait ProtocolTrait {
     fn decode_response(&self, data: &[u8]) -> Result<Response>;
 }
 
-pub trait ServerProtocol {
-    fn handle(&self, req: Request) -> Response;
-}
+//pub trait ServerProtocol {
+//    fn handle(&self, req: Request) -> Response;
+//}
+//
+//pub trait ClientProtocol {
+//    fn send(&mut self, req: Request) -> Result<Response>;
+//}
 
-pub trait ClientProtocol {
-    fn send(&mut self, req: Request) -> Result<Response>;
-}
-
-pub enum Protocol {
-    RESP(resp::RespProtocol),
-}
+pub struct Protocol;
 
 impl Protocol {
-    pub fn build(config: &Config) -> Self {
-        return Protocol::RESP(resp::RespProtocol);
+    pub fn build(config: &Config) -> Box<dyn ProtocolTrait> {
+        Box::new(resp::RespProtocol)
     }
 }

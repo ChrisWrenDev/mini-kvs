@@ -52,13 +52,13 @@ impl ProtocolTrait for RespProtocol {
     }
 }
 
-impl ServerProtocol for RespProtocol {
-    fn handle(&self, req: Request) -> Response;
-}
-
-impl ClientProtocol for RespProtocol {
-    fn send(&mut self, req: Request) -> Result<Response>;
-}
+//impl ServerProtocol for RespProtocol {
+//    fn handle(&self, req: Request) -> Response;
+//}
+//
+//impl ClientProtocol for RespProtocol {
+//    fn send(&mut self, req: Request) -> Result<Response>;
+//}
 
 pub fn serialize(command: &str, args: &[&str]) -> String {
     let total_parts = 1 + args.len();

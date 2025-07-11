@@ -1,15 +1,15 @@
-use crate::Config;
+use crate::{Config, Result, config::SerializationConfig};
 
 mod binary;
 
 pub trait SerializationTrait {}
 
-pub enum Serialization {
-    Binary(binary::Binary),
-}
+pub struct Serialization;
 
 impl Serialization {
-    pub fn build(config: &Config) -> Self {
-        return Serialization::Binary(binary::Binary);
+    pub fn build(config: &Config) -> Result<Box<dyn SerializationTrait>> {
+        match config.serialization {
+            SerializationConfig::Binary => Ok(Box::new(binary::Binary)),
+        }
     }
 }

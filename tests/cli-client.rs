@@ -1,5 +1,5 @@
 use assert_cmd::prelude::*;
-use kvs::{KvStore, Result};
+use kvs::{KvStore, Result, StoreTrait};
 use predicates::ord::eq;
 use predicates::str::{PredicateStrExt, contains, is_empty};
 use std::fs::{self, File};
@@ -100,6 +100,7 @@ fn cli_rm_stored() -> Result<()> {
     let temp_dir = TempDir::new().expect("unable to create temporary working directory");
 
     let mut store = KvStore::open(temp_dir.path())?;
+
     store.set("key1".to_owned(), "value1".to_owned())?;
     drop(store);
 

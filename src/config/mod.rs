@@ -4,10 +4,11 @@ use std::fs;
 
 #[derive(Deserialize)]
 pub struct Config {
-    storage: Option<String>,
-    server: Option<String>,
-    protocol: Option<String>,
-    serialization: Option<String>,
+    pub storage: StorageConfig,
+    pub server: ServerConfig,
+    pub client: ClientConfig,
+    pub protocol: ProtocolConfig,
+    pub serialization: SerializationConfig,
 }
 
 impl Config {
@@ -16,4 +17,36 @@ impl Config {
         let config: Config = toml::from_str(&contents)?;
         Ok(config)
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StorageConfig {
+    Kvs,
+    Sled,
+    Memory,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServerConfig {
+    Sync,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ClientConfig {
+    Sync,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProtocolConfig {
+    Result,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SerializationConfig {
+    Binary,
 }

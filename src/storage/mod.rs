@@ -4,6 +4,9 @@ use std::path::Path;
 mod kvmemory;
 mod kvstore;
 
+pub use kvmemory::KvMemory;
+pub use kvstore::KvStore;
+
 pub trait StoreTrait {
     /// get the value of the given string key
     fn get(&mut self, key: String) -> Result<Option<String>>;
@@ -18,7 +21,8 @@ pub trait StoreTrait {
 pub struct Storage;
 
 impl Storage {
-    pub fn build(config: &Config, dir_path: &Path) -> Result<impl StoreTrait> {
-        kvstore::KvStore::open(&dir_path)
+    pub fn build(config: &Config, dir_path: &Path) -> Result<Box<dyn StoreTrait>> {
+        let store = kvstore::KvStore::open(&dir_path)?;
+        Ok(Box::new(store))
     }
 }
