@@ -1,17 +1,9 @@
-use clap::{Command, ValueEnum, arg, value_parser};
-use kvs::{Config, KvsError, Result, Server, Storage};
-use std::env::current_dir;
+use clap::{Command, arg, value_parser};
+use kvs::{Engine, Result, Server};
 use std::net::SocketAddr;
 use tracing::{Level, info};
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:4000";
-
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, ValueEnum)]
-enum Engine {
-    Kvs,
-    Sled,
-    Memory,
-}
 
 fn cli() -> Command {
     Command::new("kvs-server")
@@ -44,12 +36,7 @@ fn main() -> Result<()> {
     info!("Using address: {}", addr);
     info!("Using engine: {:?}", engine);
 
-    let config = Config::from_file("../config/config.toml")?;
-
-    let path_dir = current_dir().map_err(|_| KvsError::FileNotFound)?;
-    let store = Storage::build(&config, path_dir.as_path())?;
-
-    Server::build(&config, addr.clone(), store)?.run();
+    Server::build(*addr, *engine)?.run()?;
 
     Ok(())
 }

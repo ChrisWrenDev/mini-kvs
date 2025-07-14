@@ -1,8 +1,7 @@
 use clap::{Command, arg, value_parser};
-use kvs::{Client, Config, KvsError, Request, Result, Storage};
-use std::env::current_dir;
+use kvs::{Client, Request, Result};
 use std::net::SocketAddr;
-use std::process;
+use tracing::info;
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:4000";
 
@@ -56,11 +55,6 @@ fn cli() -> Command {
 }
 
 fn main() -> Result<()> {
-    // Build log
-    let config = Config::from_file("../config/config.toml")?;
-    let path_dir = current_dir().map_err(|_| KvsError::FileNotFound)?;
-    let mut store = Storage::build(&config, &path_dir)?;
-
     let matches = cli().get_matches();
 
     match matches.subcommand() {
@@ -69,21 +63,21 @@ fn main() -> Result<()> {
             let value = matches.get_one::<String>("VALUE").expect("Required");
             let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
 
-            let mut client = Client::connect(&config, addr.clone())?;
+            info!("Key:{}, Value:{}, Addr:{}", key, value, addr);
+
+            let mut client = Client::connect(*addr)?;
             let request: Request = Request::Set {
                 key: key.clone(),
                 value: value.clone(),
             };
-            client.send(&config, request)?;
-
-            // store.set(key.to_owned(), value.to_owned())?;
+            client.send(request)?;
         }
         Some(("get", matches)) => {
             let key = matches.get_one::<String>("KEY").expect("Required");
             let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
 
-            let client = Client::connect(&config, addr.clone())?;
-            let cmd: Request = Request::Get { key: key.clone() };
+            let _client = Client::connect(*addr)?;
+            let _cmd: Request = Request::Get { key: key.clone() };
 
             // let value = store.get(key.to_string());
             // match value {
@@ -97,8 +91,8 @@ fn main() -> Result<()> {
             let key = matches.get_one::<String>("KEY").expect("Required");
             let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
 
-            let client = Client::connect(&config, addr.clone())?;
-            let cmd: Request = Request::Remove { key: key.clone() };
+            let _client = Client::connect(*addr)?;
+            let _cmd: Request = Request::Remove { key: key.clone() };
 
             // match store.remove(key.clone()) {
             //     Ok(()) => {}

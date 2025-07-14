@@ -1,4 +1,4 @@
-use crate::{Config, Result, config::SerializationConfig};
+use crate::{Config, Result, SerializationConfig};
 
 mod binary;
 

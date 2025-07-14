@@ -1,4 +1,4 @@
-use crate::serialization::SerializationTrait;
+use crate::SerializationTrait;
 
 pub struct Binary;
 

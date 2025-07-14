@@ -1,21 +1,25 @@
-use crate::{Config, Request, Result, config::ClientConfig};
+use crate::{Request, Result};
 use std::net::SocketAddr;
 
-mod client;
+mod sync_client;
 
 pub trait ClientTrait {
-    fn send(&mut self, config: &Config, request: Request) -> Result<()>;
+    fn send(&mut self, request: Request) -> Result<()>;
 }
 
 pub struct Client;
 
 impl Client {
-    pub fn connect(config: &Config, addr: SocketAddr) -> Result<Box<dyn ClientTrait>> {
-        match config.client {
-            ClientConfig::Sync => {
-                let client = client::KvsClient::connect(addr)?;
-                Ok(Box::new(client))
-            }
-        }
+    pub fn connect(addr: SocketAddr) -> Result<Box<dyn ClientTrait>> {
+        //  let config = Config::from_file("../config/config.toml")?;
+        //  match config.client {
+        //      ClientConfig::Sync => {
+        //          let client = sync_client::KvsClient::connect(addr)?;
+        //          Ok(Box::new(client))
+        //      }
+        //  }
+
+        let client = sync_client::KvsClient::connect(addr)?;
+        Ok(Box::new(client))
     }
 }

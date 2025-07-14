@@ -36,9 +36,9 @@ impl Entry {
 
         buffer.extend_from_slice(&key_size);
         buffer.extend_from_slice(&value_size);
-        buffer.extend_from_slice(&key_bytes);
+        buffer.extend_from_slice(key_bytes);
         if !value_bytes.is_empty() {
-            buffer.extend_from_slice(&value_bytes);
+            buffer.extend_from_slice(value_bytes);
         }
 
         buffer
@@ -76,10 +76,10 @@ impl Entry {
 
 #[derive(Debug)]
 enum SegmentStatus {
-    Active,     // Currently being written to
-    Sealed,     // Closed to writes, may be compacted
-    Compacting, // Being compacted into a new segment
-    Archived,   // Fully compacted, no longer in use
+    Active, // Currently being written to
+    Sealed, // Closed to writes, may be compacted
+    // Compacting, // Being compacted into a new segment
+    Archived, // Fully compacted, no longer in use
 }
 
 #[derive(Debug)]

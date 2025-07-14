@@ -1,4 +1,4 @@
-use crate::{Config, Protocol, Request, Result, client::ClientTrait};
+use crate::{ClientTrait, Protocol, Request, Result};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use tracing::{debug, info};
@@ -17,19 +17,21 @@ impl KvsClient {
 }
 
 impl ClientTrait for KvsClient {
-    fn send(&mut self, config: &Config, request: Request) -> Result<()> {
-        let protcol = Protocol::build(config);
-        let encoded = protcol.encode_request(&request);
+    fn send(&mut self, request: Request) -> Result<()> {
+        let protocol = Protocol::build();
+        let encoded = protocol.encode_request(&request);
 
         self.stream.write_all(&encoded)?;
         self.stream.flush()?;
 
-        let mut buf = Vec::new();
-
+        let mut buf = vec![0u8; 1024]; // Allocate a buffer to read into
         let n = self.stream.read(&mut buf)?;
-        let response = protcol.decode_response(&buf[..n])?;
+        buf.truncate(n); // Keep only the actual bytes read
 
-        debug!("{:?}", response);
+        info!("Client received {} bytes", n);
+
+        let response = protocol.decode_response(&buf)?;
+        debug!("Decoded response: {:?}", response);
 
         Ok(())
     }

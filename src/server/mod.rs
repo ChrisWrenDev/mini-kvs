@@ -1,22 +1,22 @@
-use crate::{Config, Result, StoreTrait, config::ServerConfig};
+use crate::{Engine, Result};
 use std::net::SocketAddr;
 
-mod server;
+mod sync_server;
 
 pub trait ServerTrait {
-    fn run(&self) -> Result<()>;
+    fn run(&mut self) -> Result<()>;
 }
 
 pub struct Server;
 
 impl Server {
-    pub fn build(
-        config: &Config,
-        addr: SocketAddr,
-        engine: Box<dyn StoreTrait>,
-    ) -> Result<Box<dyn ServerTrait>> {
-        match config.server {
-            ServerConfig::Sync => return Ok(Box::new(server::KvsServer::new(addr, engine))),
-        }
+    pub fn build(addr: SocketAddr, engine: Engine) -> Result<Box<dyn ServerTrait>> {
+        // let config = Config::from_file("../config/config.toml")?;
+
+        // match config.server {
+        //     ServerConfig::Sync => Ok(Box::new(sync_server::SyncServer::new(addr, engine)?)),
+        // }
+
+        Ok(Box::new(sync_server::SyncServer::new(addr, engine)?))
     }
 }

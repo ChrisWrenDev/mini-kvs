@@ -1,5 +1,6 @@
 use super::*;
 use crate::{KvsError, Result};
+use tracing::info;
 
 pub struct RespProtocol;
 
@@ -69,6 +70,8 @@ pub fn serialize(command: &str, args: &[&str]) -> String {
         resp += &format!("${}\r\n{}\r\n", arg.len(), arg);
     }
 
+    info!("Serialize: {}", resp);
+
     resp
 }
 
@@ -77,6 +80,9 @@ pub fn deserialize(data: &[u8]) -> Result<Vec<&str>> {
     let mut lines = input.split("\r\n").filter(|line| !line.is_empty());
 
     let header = lines.next().ok_or("Missing array header")?;
+
+    info!("Deserialize: {:?}", input);
+
     let count: usize = header
         .strip_prefix('*')
         .ok_or("Expected '*' array prefix")?

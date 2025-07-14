@@ -1,4 +1,4 @@
-use crate::{Config, Result};
+use crate::Result;
 
 mod resp;
 
@@ -36,7 +36,8 @@ pub trait ProtocolTrait {
 pub struct Protocol;
 
 impl Protocol {
-    pub fn build(config: &Config) -> Box<dyn ProtocolTrait> {
+    pub fn build() -> Box<dyn ProtocolTrait> {
+        // let _config = Config::from_file("../config/config.toml");
         Box::new(resp::RespProtocol)
     }
 }
