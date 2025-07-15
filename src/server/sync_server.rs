@@ -1,6 +1,7 @@
 use crate::{
     Engine, KvsError, Protocol, Request, Response, Result, ServerTrait, Storage, StoreTrait,
 };
+use std::env::current_dir;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use tracing::{error, info};
@@ -12,7 +13,8 @@ pub struct SyncServer {
 
 impl SyncServer {
     pub fn new(addr: SocketAddr, engine: Engine) -> Result<SyncServer> {
-        let store = Storage::build(engine)?;
+        let dir_path = current_dir()?;
+        let store = Storage::build(dir_path, engine)?;
 
         Ok(SyncServer { addr, store })
     }

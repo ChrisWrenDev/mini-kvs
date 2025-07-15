@@ -1,9 +1,11 @@
-use crate::Result;
+use crate::{KvsError, Result};
 use clap::ValueEnum;
 use std::env::current_dir;
 use std::fmt::{self, Display, Formatter};
 use std::fs;
+use std::path::PathBuf;
 use std::process::exit;
+use std::str::FromStr;
 use tracing::{error, info};
 
 // looks for file or folder with mod.rs
@@ -33,6 +35,19 @@ impl Display for Engine {
     }
 }
 
+impl FromStr for Engine {
+    type Err = KvsError;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "kvs" => Ok(Engine::Kvs),
+            "sled" => Ok(Engine::Sled),
+            "memory" => Ok(Engine::Memory),
+            _ => Err(KvsError::Protocol(format!("Invalid engine: {}", s))),
+        }
+    }
+}
+
 pub trait StoreTrait {
     /// get the value of the given string key
     fn get(&mut self, key: String) -> Result<Option<String>>;
@@ -47,12 +62,10 @@ pub trait StoreTrait {
 pub struct Storage;
 
 impl Storage {
-    pub fn build(engine: Engine) -> Result<Box<dyn StoreTrait>> {
+    pub fn build(dir_path: PathBuf, engine: Engine) -> Result<Box<dyn StoreTrait>> {
         // let _config = Config::from_file("config/config.toml")?;
 
         check_engine(&engine)?;
-
-        let dir_path = current_dir()?;
 
         let store: Box<dyn StoreTrait> = match engine {
             Engine::Kvs => Box::new(kvstore::KvStore::open(dir_path)?),
