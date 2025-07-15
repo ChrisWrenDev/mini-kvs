@@ -1,10 +1,10 @@
-use crate::{Request, Result};
+use crate::{Request, Response, Result};
 use std::net::SocketAddr;
 
 mod sync_client;
 
 pub trait ClientTrait {
-    fn send(&mut self, request: Request) -> Result<()>;
+    fn send(&mut self, request: Request) -> Result<Response>;
 }
 
 pub struct Client;

@@ -1,5 +1,7 @@
 use failure::Fail;
+use sled;
 use std::io;
+use std::string::FromUtf8Error;
 
 #[derive(Fail, Debug)]
 pub enum KvsError {
@@ -14,6 +16,12 @@ pub enum KvsError {
 
     #[fail(display = "Invalid UTF-8: {}", _0)]
     Utf8(#[cause] std::str::Utf8Error),
+
+    #[fail(display = "UTF-8 error: {}", _0)]
+    FromUtf8(#[cause] FromUtf8Error),
+
+    #[fail(display = "sled error: {}", _0)]
+    Sled(#[cause] sled::Error),
 
     #[fail(display = "Key not found")]
     KeyNotFound,
@@ -66,6 +74,18 @@ impl From<toml::de::Error> for KvsError {
 impl From<std::str::Utf8Error> for KvsError {
     fn from(err: std::str::Utf8Error) -> Self {
         KvsError::Utf8(err)
+    }
+}
+
+impl From<FromUtf8Error> for KvsError {
+    fn from(err: FromUtf8Error) -> KvsError {
+        KvsError::FromUtf8(err)
+    }
+}
+
+impl From<sled::Error> for KvsError {
+    fn from(err: sled::Error) -> KvsError {
+        KvsError::Sled(err)
     }
 }
 

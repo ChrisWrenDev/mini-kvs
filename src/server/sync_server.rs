@@ -1,5 +1,6 @@
-use crate::{Engine, Protocol, Request, Response, Result, ServerTrait, Storage, StoreTrait};
-use std::env::current_dir;
+use crate::{
+    Engine, KvsError, Protocol, Request, Response, Result, ServerTrait, Storage, StoreTrait,
+};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use tracing::{error, info};
@@ -11,8 +12,7 @@ pub struct SyncServer {
 
 impl SyncServer {
     pub fn new(addr: SocketAddr, engine: Engine) -> Result<SyncServer> {
-        let dir_path = current_dir()?;
-        let store = Storage::build(dir_path.as_path(), engine)?;
+        let store = Storage::build(engine)?;
 
         Ok(SyncServer { addr, store })
     }
@@ -49,13 +49,16 @@ fn handle_connecton(mut stream: TcpStream, store: &mut Box<dyn StoreTrait>) -> R
             Response::Ok
         }
         Request::Get { key } => match store.get(key)? {
-            Some(value) => Response::Value(value),
+            Some(value) => {
+                info!("Get Value: {}", value);
+                Response::Value(value)
+            }
             None => Response::NotFound,
         },
-        Request::Remove { key } => {
-            store.remove(key)?;
-            Response::Ok
-        }
+        Request::Remove { key } => match store.remove(key) {
+            Ok(_) => Response::Ok,
+            Err(_) => Response::NotFound,
+        },
     };
 
     let encoded = protocol.encode_response(&response);

@@ -4,7 +4,7 @@ pub use config::{ClientConfig, Config, SerializationConfig, ServerConfig};
 pub use protocols::{Protocol, Request, Response};
 pub use serialization::{Serialization, SerializationTrait};
 pub use server::{Server, ServerTrait};
-pub use storage::{Engine, KvMemory, KvStore, Storage, StoreTrait};
+pub use storage::{Engine, KvMemory, KvSled, KvStore, Storage, StoreTrait};
 
 mod client;
 mod common;

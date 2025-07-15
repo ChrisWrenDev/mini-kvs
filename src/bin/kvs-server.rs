@@ -33,8 +33,9 @@ fn main() -> Result<()> {
     let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
     let engine = matches.get_one::<Engine>("engine").expect("Required");
 
-    info!("Using address: {}", addr);
-    info!("Using engine: {:?}", engine);
+    info!("kvs-server {}", env!("CARGO_PKG_VERSION"));
+    info!("Storage engine: {}", engine.to_string());
+    info!("Listening on {}", addr);
 
     Server::build(*addr, *engine)?.run()?;
 
