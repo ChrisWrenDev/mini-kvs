@@ -307,9 +307,7 @@ pub struct KvStore {
 
 impl KvStore {
     /// Create a key/value store
-    pub fn open(dir_path: &Path) -> Result<KvStore> {
-        let base_dir = PathBuf::from(dir_path);
-
+    pub fn open(dir_path: PathBuf) -> Result<KvStore> {
         // Add segments to vector
         let mut segments = HashMap::new();
 
@@ -318,7 +316,7 @@ impl KvStore {
 
         // Get all files
         // Check directory for log files
-        let mut file_ids = fs::read_dir(dir_path)?
+        let mut file_ids = fs::read_dir(&dir_path)?
             .filter_map(|entry| {
                 let path = entry.ok()?.path();
 
@@ -352,7 +350,7 @@ impl KvStore {
             };
 
             // Create segment for file
-            let mut segment = Segment::open(dir_path, id, status)?;
+            let mut segment = Segment::open(&dir_path, id, status)?;
 
             // Update index with segment
             let segment_stale_entries = segment.index(&mut index)?;
@@ -376,13 +374,13 @@ impl KvStore {
         if segments.is_empty() {
             let file_id = 1;
             active = format!("{file_id}");
-            let segment = Segment::new(&base_dir, file_id)?;
+            let segment = Segment::new(&dir_path, file_id)?;
             segments.insert(active.clone(), segment);
         }
 
         // Create Log
         Ok(KvStore {
-            base_dir,
+            base_dir: dir_path,
             segments,
             active,
             size,
