@@ -38,6 +38,7 @@ static KEYS: Lazy<Vec<String>> = Lazy::new(|| get_vals(KEY_SEED, &*KEY_SIZES));
 static VALS: Lazy<Vec<String>> = Lazy::new(|| get_vals(VALUE_SEED, &*VAL_SIZES));
 
 fn bench_write(c: &mut Criterion) {
+    println!("Running bench_write");
     for engine in Engine::value_variants() {
         let mut bench_write = c.benchmark_group("bench_write");
         let keys = &KEYS;
@@ -48,10 +49,14 @@ fn bench_write(c: &mut Criterion) {
         bench_write.bench_function(write_id, |b| {
             b.iter_batched(
                 || {
-                    let tempdir = TempDir::new().unwrap().path().to_path_buf();
-                    Storage::build(tempdir, *engine).unwrap()
+                    let tempdir = TempDir::new_in("/tmp").unwrap();
+                    let unique_path = tempdir.path().join(&engine_name);
+                    std::fs::create_dir_all(&unique_path).unwrap();
+
+                    let storage = Storage::build(unique_path, *engine).unwrap();
+                    (storage, tempdir)
                 },
-                |mut kv| {
+                |(mut kv, _tempdir)| {
                     for i in 0..NUM_VALS {
                         let key = keys[i].clone();
                         let val = vals[i].clone();
@@ -76,10 +81,22 @@ fn bench_read(c: &mut Criterion) {
         bench_read.bench_function(read_id, |b| {
             b.iter_batched(
                 || {
-                    let tempdir = TempDir::new().unwrap().path().to_path_buf();
-                    Storage::build(tempdir, *engine).unwrap()
+                    let tempdir = TempDir::new_in("/tmp").unwrap();
+                    let unique_path = tempdir.path().join(&engine_name);
+                    std::fs::create_dir_all(&unique_path).unwrap();
+
+                    let mut storage = Storage::build(unique_path, *engine).unwrap();
+
+                    // 🔧 Prepopulate the store
+                    for i in 0..NUM_VALS {
+                        let key = keys[i].clone();
+                        let val = vals[i].clone();
+                        storage.set(key, val).unwrap();
+                    }
+
+                    (storage, tempdir)
                 },
-                |mut kv| {
+                |(mut kv, _tempdir)| {
                     let mut r: SmallRng = SeedableRng::seed_from_u64(READ_SEED);
                     // read 1000 times
                     for _ in 0..1000 {

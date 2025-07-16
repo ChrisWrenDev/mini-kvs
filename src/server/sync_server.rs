@@ -1,6 +1,4 @@
-use crate::{
-    Engine, KvsError, Protocol, Request, Response, Result, ServerTrait, Storage, StoreTrait,
-};
+use crate::{Engine, Protocol, Request, Response, Result, ServerTrait, Storage, StoreTrait};
 use std::env::current_dir;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};

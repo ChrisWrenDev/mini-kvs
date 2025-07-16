@@ -6,7 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::exit;
 use std::str::FromStr;
-use tracing::{error, info};
+use tracing::error;
 
 // looks for file or folder with mod.rs
 mod kvmemory;
@@ -65,11 +65,14 @@ impl Storage {
     pub fn build(dir_path: PathBuf, engine: Engine) -> Result<Box<dyn StoreTrait>> {
         // let _config = Config::from_file("config/config.toml")?;
 
-        check_engine(&engine)?;
+        check_engine(&dir_path, &engine)?;
 
         let store: Box<dyn StoreTrait> = match engine {
             Engine::Kvs => Box::new(kvstore::KvStore::open(dir_path)?),
-            Engine::Sled => Box::new(kvsled::KvSled::new(sled::open(dir_path)?)),
+            Engine::Sled => {
+                let db = sled::open(&dir_path)?;
+                Box::new(kvsled::KvSled::new(db))
+            }
             Engine::Memory => Box::new(kvmemory::KvMemory::new()),
         };
 
@@ -77,9 +80,9 @@ impl Storage {
     }
 }
 
-fn check_engine(engine: &Engine) -> Result<()> {
+fn check_engine(dir_path: &PathBuf, engine: &Engine) -> Result<()> {
     let engine_str = engine.to_string();
-    let engine_file = current_dir()?.join("engine");
+    let engine_file = dir_path.join("engine");
 
     if !engine_file.exists() {
         fs::write(&engine_file, &engine_str)?;

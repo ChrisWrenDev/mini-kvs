@@ -2,7 +2,7 @@ use clap::{Command, arg, value_parser};
 use kvs::{Client, Request, Response, Result};
 use std::net::SocketAddr;
 use std::process::exit;
-use tracing::{Level, error, info};
+use tracing::Level;
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:4000";
 
