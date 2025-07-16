@@ -527,6 +527,7 @@ dependencies = [
  "clap 4.5.41",
  "criterion",
  "failure",
+ "once_cell",
  "predicates",
  "rand",
  "serde",
