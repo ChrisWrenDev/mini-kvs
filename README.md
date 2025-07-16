@@ -72,12 +72,12 @@ This project is divided into **five stages**, each introducing new concepts and 
 
 | Task                                   | Status       | Notes                             |
 |----------------------------------------|--------------|-----------------------------------|
-| Part 1: Command line parsing           |  🔲 TODO     | description  |
-| Part 2: Logging                        |  🔲 TODO     | description  |
-| Part 3: Client-server networking setup |  🔲 TODO     | description  |
-| Part 4: Commands across the network    |  🔲 TODO     | description  |
-| Part 5: Pluggable storage engines      |  🔲 TODO     | description  |
-| Part 6: Benchmarking                   |  🔲 TODO     | description  |
+| Part 1: Command line parsing           |  ✅ Done      | description  |
+| Part 2: Logging                        |  ✅ Done      | description  |
+| Part 3: Client-server networking setup |  ✅ Done      | description  |
+| Part 4: Commands across the network    |  ✅ Done      | description  |
+| Part 5: Pluggable storage engines      |  ✅ Done      | description  |
+| Part 6: Benchmarking                   |  ✅ Done      | description  |
 
 ---
 
