@@ -1,6 +1,6 @@
 use clap::ValueEnum;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use kvs::{Engine, Storage};
+use kvs::{Engine, Storage, StoreTrait};
 use once_cell::sync::Lazy;
 use rand::{Rng, SeedableRng, distributions::Alphanumeric, rngs::SmallRng};
 use tempfile::TempDir;
@@ -56,7 +56,7 @@ fn bench_write(c: &mut Criterion) {
                     let storage = Storage::build(unique_path, *engine).unwrap();
                     (storage, tempdir)
                 },
-                |(mut kv, _tempdir)| {
+                |(kv, _tempdir)| {
                     for i in 0..NUM_VALS {
                         let key = keys[i].clone();
                         let val = vals[i].clone();
@@ -85,7 +85,7 @@ fn bench_read(c: &mut Criterion) {
                     let unique_path = tempdir.path().join(&engine_name);
                     std::fs::create_dir_all(&unique_path).unwrap();
 
-                    let mut storage = Storage::build(unique_path, *engine).unwrap();
+                    let storage = Storage::build(unique_path, *engine).unwrap();
 
                     // 🔧 Prepopulate the store
                     for i in 0..NUM_VALS {
@@ -96,7 +96,7 @@ fn bench_read(c: &mut Criterion) {
 
                     (storage, tempdir)
                 },
-                |(mut kv, _tempdir)| {
+                |(kv, _tempdir)| {
                     let mut r: SmallRng = SeedableRng::seed_from_u64(READ_SEED);
                     // read 1000 times
                     for _ in 0..1000 {

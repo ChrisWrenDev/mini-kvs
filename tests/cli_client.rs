@@ -1,11 +1,12 @@
 use assert_cmd::prelude::*;
-use kvs::{KvStore, Result, StoreTrait};
-use predicates::ord::eq;
-use predicates::str::{PredicateStrExt, contains, is_empty};
-use std::fs::{self, File};
+// use kvs::{KvStore, Result, StoreTrait};
+// use predicates::ord::eq;
+// use predicates::str::{PredicateStrExt, contains, is_empty};
+use predicates::str::contains;
+// use std::fs::{self, File};
 use std::process::Command;
-use std::thread;
-use std::time::Duration;
+// use std::thread;
+// use std::time::Duration;
 use tempfile::TempDir;
 
 // `kvs` with no args should exit with a non-zero code.

@@ -1,12 +1,9 @@
 use failure::Fail;
-use sled;
-use std::io;
-use std::string::FromUtf8Error;
 
 #[derive(Fail, Debug)]
 pub enum KvsError {
     #[fail(display = "I/O error: {}", _0)]
-    Io(#[cause] io::Error),
+    Io(#[cause] std::io::Error),
 
     #[fail(display = "Serialization or deserialization error: {}", _0)]
     Serde(#[cause] serde_json::Error),
@@ -18,7 +15,7 @@ pub enum KvsError {
     Utf8(#[cause] std::str::Utf8Error),
 
     #[fail(display = "UTF-8 error: {}", _0)]
-    FromUtf8(#[cause] FromUtf8Error),
+    FromUtf8(#[cause] std::string::FromUtf8Error),
 
     #[fail(display = "sled error: {}", _0)]
     Sled(#[cause] sled::Error),
@@ -49,12 +46,18 @@ pub enum KvsError {
 
     #[fail(display = "Protocol error: {}", _0)]
     Protocol(String),
+
+    #[fail(display = "Lock error: {}", _0)]
+    LockError(String),
+
+    #[fail(display = "Lock poison error")]
+    LockPoisoned,
 }
 
 pub type Result<T> = std::result::Result<T, KvsError>;
 
-impl From<io::Error> for KvsError {
-    fn from(err: io::Error) -> Self {
+impl From<std::io::Error> for KvsError {
+    fn from(err: std::io::Error) -> Self {
         KvsError::Io(err)
     }
 }
@@ -77,8 +80,8 @@ impl From<std::str::Utf8Error> for KvsError {
     }
 }
 
-impl From<FromUtf8Error> for KvsError {
-    fn from(err: FromUtf8Error) -> KvsError {
+impl From<std::string::FromUtf8Error> for KvsError {
+    fn from(err: std::string::FromUtf8Error) -> KvsError {
         KvsError::FromUtf8(err)
     }
 }
@@ -98,5 +101,47 @@ impl From<String> for KvsError {
 impl From<&str> for KvsError {
     fn from(s: &str) -> Self {
         KvsError::Protocol(s.to_string())
+    }
+}
+
+impl From<std::sync::PoisonError<std::sync::MutexGuard<'_, sled::Db>>> for KvsError {
+    fn from(err: std::sync::PoisonError<std::sync::MutexGuard<'_, sled::Db>>) -> Self {
+        KvsError::LockError(err.to_string())
+    }
+}
+
+impl
+    From<
+        std::sync::PoisonError<
+            std::sync::MutexGuard<'_, std::collections::HashMap<String, String>>,
+        >,
+    > for KvsError
+{
+    fn from(
+        err: std::sync::PoisonError<
+            std::sync::MutexGuard<'_, std::collections::HashMap<String, String>>,
+        >,
+    ) -> Self {
+        KvsError::LockError(err.to_string())
+    }
+}
+
+impl From<std::sync::PoisonError<std::sync::MutexGuard<'_, std::io::BufReader<std::fs::File>>>>
+    for KvsError
+{
+    fn from(
+        err: std::sync::PoisonError<std::sync::MutexGuard<'_, std::io::BufReader<std::fs::File>>>,
+    ) -> Self {
+        KvsError::LockError(err.to_string())
+    }
+}
+
+impl From<std::sync::PoisonError<std::sync::MutexGuard<'_, std::io::BufWriter<std::fs::File>>>>
+    for KvsError
+{
+    fn from(
+        err: std::sync::PoisonError<std::sync::MutexGuard<'_, std::io::BufWriter<std::fs::File>>>,
+    ) -> Self {
+        KvsError::LockError(err.to_string())
     }
 }

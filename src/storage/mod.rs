@@ -47,35 +47,63 @@ impl FromStr for Engine {
     }
 }
 
-pub trait StoreTrait {
+pub trait StoreTrait: Clone + Send + 'static {
     /// get the value of the given string key
-    fn get(&mut self, key: String) -> Result<Option<String>>;
+    fn get(&self, key: String) -> Result<Option<String>>;
 
     /// set the value of the string key
-    fn set(&mut self, key: String, val: String) -> Result<()>;
+    fn set(&self, key: String, val: String) -> Result<()>;
 
     /// remove the value of the key
-    fn remove(&mut self, key: String) -> Result<()>;
+    fn remove(&self, key: String) -> Result<()>;
 }
 
-pub struct Storage;
+#[derive(Clone)]
+pub enum Storage {
+    Kvs(KvStore),
+    Sled(KvSled),
+    Memory(KvMemory),
+}
 
 impl Storage {
-    pub fn build(dir_path: PathBuf, engine: Engine) -> Result<Box<dyn StoreTrait>> {
+    pub fn build(dir_path: PathBuf, engine: Engine) -> Result<Storage> {
         // let _config = Config::from_file("config/config.toml")?;
 
         check_engine(&dir_path, &engine)?;
 
-        let store: Box<dyn StoreTrait> = match engine {
-            Engine::Kvs => Box::new(kvstore::KvStore::open(dir_path)?),
-            Engine::Sled => {
-                let db = sled::open(&dir_path)?;
-                Box::new(kvsled::KvSled::new(db))
-            }
-            Engine::Memory => Box::new(kvmemory::KvMemory::new()),
+        let store: Storage = match engine {
+            Engine::Kvs => Storage::Kvs(KvStore::open(dir_path)?),
+            Engine::Sled => Storage::Sled(KvSled::new(sled::open(&dir_path)?)),
+            Engine::Memory => Storage::Memory(KvMemory::new()),
         };
 
         Ok(store)
+    }
+}
+
+impl StoreTrait for Storage {
+    fn get(&self, key: String) -> Result<Option<String>> {
+        match self {
+            Storage::Kvs(store) => store.get(key),
+            Storage::Sled(store) => store.get(key),
+            Storage::Memory(store) => store.get(key),
+        }
+    }
+
+    fn set(&self, key: String, val: String) -> Result<()> {
+        match self {
+            Storage::Kvs(store) => store.set(key, val),
+            Storage::Sled(store) => store.set(key, val),
+            Storage::Memory(store) => store.set(key, val),
+        }
+    }
+
+    fn remove(&self, key: String) -> Result<()> {
+        match self {
+            Storage::Kvs(store) => store.remove(key),
+            Storage::Sled(store) => store.remove(key),
+            Storage::Memory(store) => store.remove(key),
+        }
     }
 }
 

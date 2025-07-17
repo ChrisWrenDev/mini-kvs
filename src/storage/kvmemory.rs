@@ -1,5 +1,6 @@
 use crate::{Result, StoreTrait};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 /// The `KvStore` stores string key/value pairs.
 ///
@@ -14,16 +15,16 @@ use std::collections::HashMap;
 /// let val = store.get("key".to_owned());
 /// assert_eq!(val, Some("value".to_owned()));
 /// ```
-#[derive(Default)]
+#[derive(Default, Clone, Debug)]
 pub struct KvMemory {
-    map: HashMap<String, String>,
+    map: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl KvMemory {
     /// Creates a `KvStore`.
     pub fn new() -> KvMemory {
         KvMemory {
-            map: HashMap::new(),
+            map: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -31,21 +32,21 @@ impl StoreTrait for KvMemory {
     /// Sets the value of a string key to a string.
     ///
     /// If the key already exists, the previous value will be overwritten.
-    fn set(&mut self, key: String, value: String) -> Result<()> {
-        self.map.insert(key, value);
+    fn set(&self, key: String, value: String) -> Result<()> {
+        self.map.lock()?.insert(key, value);
         Ok(())
     }
 
     /// Gets the string value of a given string key.
     ///
     /// Returns `None` if the given key does not exist.
-    fn get(&mut self, key: String) -> Result<Option<String>> {
-        Ok(self.map.get(&key).cloned())
+    fn get(&self, key: String) -> Result<Option<String>> {
+        Ok(self.map.lock()?.get(&key).cloned())
     }
 
     /// Remove a given key.
-    fn remove(&mut self, key: String) -> Result<()> {
-        self.map.remove(&key);
+    fn remove(&self, key: String) -> Result<()> {
+        self.map.lock()?.remove(&key);
         Ok(())
     }
 }

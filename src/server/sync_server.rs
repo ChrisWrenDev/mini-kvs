@@ -6,7 +6,7 @@ use tracing::{error, info};
 
 pub struct SyncServer {
     pub addr: SocketAddr,
-    pub store: Box<dyn StoreTrait>,
+    pub store: Storage,
 }
 
 impl SyncServer {
@@ -35,7 +35,7 @@ impl ServerTrait for SyncServer {
         Ok(())
     }
 }
-fn handle_connecton(mut stream: TcpStream, store: &mut Box<dyn StoreTrait>) -> Result<()> {
+fn handle_connecton(mut stream: TcpStream, store: &mut Storage) -> Result<()> {
     let mut buffer = vec![0u8; 1024]; // Allocate 1 KB
     let bytes_read = stream.read(&mut buffer)?;
     buffer.truncate(bytes_read);
