@@ -1,6 +1,5 @@
 use crate::{KvsError, Result};
 use clap::ValueEnum;
-use std::env::current_dir;
 use std::fmt::{self, Display, Formatter};
 use std::fs;
 use std::path::PathBuf;

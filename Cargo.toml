@@ -24,7 +24,14 @@ walkdir = "2.2.7"
 criterion = { version = "0.3", features = ["html_reports"] }
 rand = "0.6.5"
 once_cell = "1.21.3"
+crossbeam-utils = "0.6.5"
+panic-control = "0.1.4"
 
 [[bench]]
 name = "engine_benchmark"
 harness = false
+
+[profile.bench]
+debug = true
+
+
