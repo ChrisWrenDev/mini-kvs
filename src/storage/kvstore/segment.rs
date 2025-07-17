@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 
 #[derive(Debug, Clone)]
 pub enum SegmentStatus {
@@ -17,10 +18,10 @@ pub enum SegmentStatus {
 
 #[derive(Debug, Clone)]
 pub struct Segment {
-    pub file_id: u64,
-    pub offset: u64,
-    pub size: u64,
-    pub status: SegmentStatus,
+    pub file_id: Arc<AtomicU64>,
+    pub offset: Arc<AtomicU64>,
+    pub size: Arc<AtomicU64>,
+    pub status: Arc<RwLock<SegmentStatus>>,
     pub reader: Arc<Mutex<BufReader<File>>>,
     pub writer: Arc<Mutex<BufWriter<File>>>,
 }
@@ -46,10 +47,10 @@ impl Segment {
 
         // Create Segment
         Ok(Segment {
-            file_id,
-            offset: size,
-            size,
-            status: SegmentStatus::Active,
+            file_id: Arc::new(AtomicU64::new(file_id)),
+            offset: Arc::new(AtomicU64::new(size)),
+            size: Arc::new(AtomicU64::new(size)),
+            status: Arc::new(RwLock::new(SegmentStatus::Active)),
             reader: Arc::new(Mutex::new(BufReader::new(reader_file))),
             writer: Arc::new(Mutex::new(BufWriter::new(writer_file))),
         })
@@ -70,10 +71,10 @@ impl Segment {
 
         // Create Segment
         Ok(Segment {
-            file_id,
-            offset: size,
-            size,
-            status,
+            file_id: Arc::new(AtomicU64::new(file_id)),
+            offset: Arc::new(AtomicU64::new(size)),
+            size: Arc::new(AtomicU64::new(size)),
+            status: Arc::new(RwLock::new(status)),
             reader: Arc::new(Mutex::new(BufReader::new(reader_file))),
             writer: Arc::new(Mutex::new(BufWriter::new(writer_file))),
         })
@@ -102,7 +103,7 @@ impl Segment {
             }
         }
         // Current Segment Offset
-        let cur_offset = self.offset;
+        let cur_offset = self.offset.load(Ordering::Acquire);
 
         let buffer = entry.serialize();
 
@@ -112,19 +113,21 @@ impl Segment {
         self.writer.lock()?.get_ref().sync_data()?;
 
         // Update segment offset
-        self.offset += buffer.len() as u64;
+        self.offset
+            .fetch_add(buffer.len() as u64, Ordering::Relaxed);
 
         // Ensure segment size reflects file size growth
-        self.size = self.offset;
+        self.size
+            .store(self.offset.load(Ordering::Acquire), Ordering::SeqCst);
 
         // Update log pointer
         Ok(CommandPos {
-            file_id: self.file_id,
+            file_id: self.file_id.load(Ordering::Acquire),
             offset: cur_offset,
             length: buffer.len() as u64,
         })
     }
-    pub fn index(&mut self, index: &mut HashMap<String, CommandPos>) -> Result<u64> {
+    pub fn index(&mut self, index: &mut HashMap<String, Arc<RwLock<CommandPos>>>) -> Result<u64> {
         let mut stale_entries = 0;
         let mut read_offset = 0;
         let current_size = self.size()?;
@@ -166,11 +169,11 @@ impl Segment {
                     if index
                         .insert(
                             key.clone(),
-                            CommandPos {
-                                file_id: self.file_id,
+                            Arc::new(RwLock::new(CommandPos {
+                                file_id: self.file_id.load(Ordering::Acquire),
                                 offset: read_offset,
                                 length: consumed,
-                            },
+                            })),
                         )
                         .is_some()
                     {
