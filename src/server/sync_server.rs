@@ -1,20 +1,26 @@
-use crate::{Engine, Protocol, Request, Response, Result, ServerTrait, Storage, StoreTrait};
+use crate::{
+    Engine, KvsError, Protocol, Request, Response, Result, ServerTrait, Storage, StoreTrait,
+    ThreadPool,
+};
 use std::env::current_dir;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
 use tracing::{error, info};
 
 pub struct SyncServer {
     pub addr: SocketAddr,
-    pub store: Storage,
+    pub store: Arc<Mutex<Storage>>,
+    pub pool: ThreadPool,
 }
 
 impl SyncServer {
-    pub fn new(addr: SocketAddr, engine: Engine) -> Result<SyncServer> {
+    pub fn new(addr: SocketAddr, engine: Engine, num_threads: u32) -> Result<SyncServer> {
         let dir_path = current_dir()?;
-        let store = Storage::build(dir_path, engine)?;
+        let store = Arc::new(Mutex::new(Storage::build(dir_path, engine)?));
+        let pool = ThreadPool::run(num_threads)?;
 
-        Ok(SyncServer { addr, store })
+        Ok(SyncServer { addr, store, pool })
     }
 }
 impl ServerTrait for SyncServer {
@@ -26,7 +32,12 @@ impl ServerTrait for SyncServer {
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
-                    handle_connecton(stream, &mut self.store)?;
+                    let store = Arc::clone(&self.store);
+                    self.pool.spawn(move || {
+                        if let Err(e) = handle_connecton(stream, store) {
+                            error!("Failed to handle connection: {}", e);
+                        }
+                    });
                 }
                 Err(e) => error!("Connection failed: {}", e),
             }
@@ -35,7 +46,7 @@ impl ServerTrait for SyncServer {
         Ok(())
     }
 }
-fn handle_connecton(mut stream: TcpStream, store: &mut Storage) -> Result<()> {
+fn handle_connecton(mut stream: TcpStream, store: Arc<Mutex<Storage>>) -> Result<()> {
     let mut buffer = vec![0u8; 1024]; // Allocate 1 KB
     let bytes_read = stream.read(&mut buffer)?;
     buffer.truncate(bytes_read);
@@ -43,6 +54,7 @@ fn handle_connecton(mut stream: TcpStream, store: &mut Storage) -> Result<()> {
     let protocol = Protocol::build();
     let request = protocol.decode_request(&buffer)?;
 
+    let store = store.lock().map_err(|_| KvsError::LockPoisoned)?;
     let response: Response = match request {
         Request::Set { key, value } => {
             store.set(key, value)?;

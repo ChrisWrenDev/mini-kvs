@@ -16,7 +16,12 @@ impl Server {
         // match config.server {
         //     ServerConfig::Sync => Ok(Box::new(sync_server::SyncServer::new(addr, engine)?)),
         // }
+        const NUM_THREADS: u32 = 5;
 
-        Ok(Box::new(sync_server::SyncServer::new(addr, engine)?))
+        Ok(Box::new(sync_server::SyncServer::new(
+            addr,
+            engine,
+            NUM_THREADS,
+        )?))
     }
 }
