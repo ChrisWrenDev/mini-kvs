@@ -15,6 +15,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter","fmt", "json"]}
 tracing-log = "0.1"
 sled = "0.34.6"
+rayon = "1.10.0"
 
 [dev-dependencies]
 assert_cmd = "0.11.0"

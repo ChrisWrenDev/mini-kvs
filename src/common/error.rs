@@ -23,6 +23,9 @@ pub enum KvsError {
     #[fail(display = "sled error: {}", _0)]
     Sled(#[cause] sled::Error),
 
+    #[fail(display = "rayon error: {}", _0)]
+    Rayon(#[cause] rayon::ThreadPoolBuildError),
+
     #[fail(display = "Key not found")]
     KeyNotFound,
 
@@ -98,6 +101,12 @@ impl From<std::num::TryFromIntError> for KvsError {
 impl From<sled::Error> for KvsError {
     fn from(err: sled::Error) -> KvsError {
         KvsError::Sled(err)
+    }
+}
+
+impl From<rayon::ThreadPoolBuildError> for KvsError {
+    fn from(err: rayon::ThreadPoolBuildError) -> KvsError {
+        KvsError::Rayon(err)
     }
 }
 

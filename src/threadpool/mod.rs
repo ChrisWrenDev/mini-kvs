@@ -2,9 +2,11 @@ use crate::Result;
 
 mod naive;
 mod queue;
+mod rayon;
 
 pub use naive::NaiveThreadPool;
 pub use queue::QueueThreadPool;
+pub use rayon::RayonThreadPool;
 
 pub trait ThreadPoolTrait {
     fn new(threads: u32) -> Result<Self>
@@ -19,13 +21,13 @@ pub trait ThreadPoolTrait {
 pub enum ThreadPool {
     Naive(NaiveThreadPool),
     Queue(QueueThreadPool),
-    //   Rayon(RayonThreadPool),
+    Rayon(RayonThreadPool),
 }
 
 pub enum PoolType {
     Naive,
     Queue,
-    //  Rayon,
+    Rayon,
 }
 
 impl ThreadPool {
@@ -35,7 +37,7 @@ impl ThreadPool {
         match pool_type {
             PoolType::Naive => Ok(ThreadPool::Naive(NaiveThreadPool::new(threads)?)),
             PoolType::Queue => Ok(ThreadPool::Queue(QueueThreadPool::new(threads)?)),
-            //   PoolType::Rayon => Ok(ThreadPool::Rayon(RayonThreadPool::new(threads)?)),
+            PoolType::Rayon => Ok(ThreadPool::Rayon(RayonThreadPool::new(threads)?)),
         }
     }
     pub fn spawn<F>(&self, job: F)
@@ -45,7 +47,7 @@ impl ThreadPool {
         match self {
             ThreadPool::Naive(pool) => pool.spawn(job),
             ThreadPool::Queue(pool) => pool.spawn(job),
-            //   ThreadPool::Rayon(pool) => pool.spawn(job),
+            ThreadPool::Rayon(pool) => pool.spawn(job),
         }
     }
 }
