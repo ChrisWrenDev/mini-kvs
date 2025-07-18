@@ -5,7 +5,7 @@ pub use protocols::{Protocol, Request, Response};
 pub use serialization::{Serialization, SerializationTrait};
 pub use server::{Server, ServerTrait};
 pub use storage::{Engine, KvMemory, KvSled, KvStore, Storage, StoreTrait};
-pub use threadpool::{NaiveThreadPool, ThreadPool, ThreadPoolTrait};
+pub use threadpool::{NaiveThreadPool, QueueThreadPool, ThreadPool, ThreadPoolTrait};
 
 mod client;
 mod common;

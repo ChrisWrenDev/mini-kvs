@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use kvs::{NaiveThreadPool, Result, ThreadPoolTrait};
+use kvs::{NaiveThreadPool, QueueThreadPool, Result, ThreadPoolTrait};
 
 use crossbeam_utils::sync::WaitGroup;
 
@@ -51,19 +51,19 @@ fn naive_thread_pool_spawn_counter() -> Result<()> {
     spawn_counter(pool)
 }
 
-// #[test]
-// fn shared_queue_thread_pool_spawn_counter() -> Result<()> {
-//     let pool = SharedQueueThreadPool::new(4)?;
-//     spawn_counter(pool)
-// }
-//
+#[test]
+fn queue_thread_pool_spawn_counter() -> Result<()> {
+    let pool = QueueThreadPool::new(4)?;
+    spawn_counter(pool)
+}
+
 // #[test]
 // fn rayon_thread_pool_spawn_counter() -> Result<()> {
 //     let pool = RayonThreadPool::new(4)?;
 //     spawn_counter(pool)
 // }
-//
+
 // #[test]
-// fn shared_queue_thread_pool_panic_task() -> Result<()> {
-//     spawn_panic_task::<SharedQueueThreadPool>()
+// fn queue_thread_pool_panic_task() -> Result<()> {
+//     spawn_panic_task::<QueueThreadPool>()
 // }

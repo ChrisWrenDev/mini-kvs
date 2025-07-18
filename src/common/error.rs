@@ -17,6 +17,9 @@ pub enum KvsError {
     #[fail(display = "UTF-8 error: {}", _0)]
     FromUtf8(#[cause] std::string::FromUtf8Error),
 
+    #[fail(display = "From Int error: {}", _0)]
+    FromInt(#[cause] std::num::TryFromIntError),
+
     #[fail(display = "sled error: {}", _0)]
     Sled(#[cause] sled::Error),
 
@@ -83,6 +86,12 @@ impl From<std::str::Utf8Error> for KvsError {
 impl From<std::string::FromUtf8Error> for KvsError {
     fn from(err: std::string::FromUtf8Error) -> KvsError {
         KvsError::FromUtf8(err)
+    }
+}
+
+impl From<std::num::TryFromIntError> for KvsError {
+    fn from(err: std::num::TryFromIntError) -> KvsError {
+        KvsError::FromInt(err)
     }
 }
 

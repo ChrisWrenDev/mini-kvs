@@ -30,18 +30,16 @@ impl ServerTrait for SyncServer {
         let listener = TcpListener::bind(self.addr)?;
 
         for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    let store = Arc::clone(&self.store);
-                    self.pool.spawn(move || {
-                        if let Err(e) = handle_connecton(stream, store) {
-                            error!("Failed to handle connection: {}", e);
-                        }
-                    });
+            let stream = stream?;
+            let store = Arc::clone(&self.store);
+            self.pool.spawn(move || {
+                if let Err(e) = handle_connecton(stream, store) {
+                    error!("Failed to handle connection: {}", e);
                 }
-                Err(e) => error!("Connection failed: {}", e),
-            }
+            });
         }
+
+        println!("Shutting down.");
 
         Ok(())
     }
