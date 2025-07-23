@@ -1,5 +1,5 @@
 use clap::{Command, arg, value_parser};
-use kvs::{Client, Request, Response, Result};
+use kvs::{Client, ClientTrait, Request, Response, Result};
 use std::net::SocketAddr;
 use std::process::exit;
 use tracing::Level;

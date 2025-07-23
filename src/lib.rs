@@ -6,7 +6,7 @@ pub use serialization::{Serialization, SerializationTrait};
 pub use server::{Server, ServerTrait};
 pub use storage::{Engine, KvMemory, KvSled, KvStore, Storage, StoreTrait};
 pub use threadpool::{
-    NaiveThreadPool, QueueThreadPool, RayonThreadPool, ThreadPool, ThreadPoolTrait,
+    NaiveThreadPool, PoolType, QueueThreadPool, RayonThreadPool, ThreadPool, ThreadPoolTrait,
 };
 
 mod client;

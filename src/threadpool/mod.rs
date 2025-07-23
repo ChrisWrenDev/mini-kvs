@@ -1,4 +1,7 @@
 use crate::Result;
+use clap::ValueEnum;
+use std::fmt::{self, Display, Formatter};
+use tracing::info;
 
 mod naive;
 mod queue;
@@ -24,17 +27,29 @@ pub enum ThreadPool {
     Rayon(RayonThreadPool),
 }
 
+#[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum PoolType {
     Naive,
     Queue,
     Rayon,
 }
 
-impl ThreadPool {
-    pub fn run(threads: u32) -> Result<Self> {
-        let pool_type = PoolType::Naive;
+impl Display for PoolType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            PoolType::Naive => "naive",
+            PoolType::Queue => "queue",
+            PoolType::Rayon => "rayon",
+        };
+        write!(f, "{}", s)
+    }
+}
 
-        match pool_type {
+impl ThreadPool {
+    pub fn run(pool: PoolType, threads: u32) -> Result<Self> {
+        info!("Thread Pool Type: {}", pool.to_string());
+
+        match pool {
             PoolType::Naive => Ok(ThreadPool::Naive(NaiveThreadPool::new(threads)?)),
             PoolType::Queue => Ok(ThreadPool::Queue(QueueThreadPool::new(threads)?)),
             PoolType::Rayon => Ok(ThreadPool::Rayon(RayonThreadPool::new(threads)?)),

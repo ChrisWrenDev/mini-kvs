@@ -1,10 +1,11 @@
 use crate::{
-    Engine, KvsError, Protocol, Request, Response, Result, ServerTrait, Storage, StoreTrait,
-    ThreadPool,
+    Engine, KvsError, PoolType, Protocol, Request, Response, Result, ServerTrait, Storage,
+    StoreTrait, ThreadPool,
 };
-use std::env::current_dir;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::path::PathBuf;
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use tracing::{error, info};
 
@@ -12,15 +13,30 @@ pub struct SyncServer {
     pub addr: SocketAddr,
     pub store: Arc<Mutex<Storage>>,
     pub pool: ThreadPool,
+    pub shutdown_tx: Sender<()>,
+    pub shutdown_rx: Receiver<()>,
 }
 
 impl SyncServer {
-    pub fn new(addr: SocketAddr, engine: Engine, num_threads: u32) -> Result<SyncServer> {
-        let dir_path = current_dir()?;
+    pub fn new(
+        addr: SocketAddr,
+        engine: Engine,
+        pool: PoolType,
+        num_threads: u32,
+        dir_path: PathBuf,
+    ) -> Result<SyncServer> {
         let store = Arc::new(Mutex::new(Storage::build(dir_path, engine)?));
-        let pool = ThreadPool::run(num_threads)?;
+        let pool = ThreadPool::run(pool, num_threads)?;
 
-        Ok(SyncServer { addr, store, pool })
+        let (shutdown_tx, shutdown_rx) = channel::<()>();
+
+        Ok(SyncServer {
+            addr,
+            store,
+            pool,
+            shutdown_tx,
+            shutdown_rx,
+        })
     }
 }
 impl ServerTrait for SyncServer {
@@ -30,6 +46,9 @@ impl ServerTrait for SyncServer {
         let listener = TcpListener::bind(self.addr)?;
 
         for stream in listener.incoming() {
+            if self.shutdown_rx.try_recv().is_ok() {
+                break;
+            }
             let stream = stream?;
             let store = Arc::clone(&self.store);
             self.pool.spawn(move || {
@@ -42,6 +61,9 @@ impl ServerTrait for SyncServer {
         println!("Shutting down.");
 
         Ok(())
+    }
+    fn shutdown(&self) -> Sender<()> {
+        self.shutdown_tx.clone()
     }
 }
 fn handle_connecton(mut stream: TcpStream, store: Arc<Mutex<Storage>>) -> Result<()> {

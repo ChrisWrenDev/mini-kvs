@@ -1,5 +1,6 @@
 use clap::{Command, arg, value_parser};
-use kvs::{Engine, Result, Server};
+use kvs::{Engine, PoolType, Result, Server, ServerTrait};
+use std::env::current_dir;
 use std::net::SocketAddr;
 use tracing::{Level, info};
 
@@ -32,12 +33,15 @@ fn main() -> Result<()> {
     let matches = cli().get_matches();
     let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
     let engine = matches.get_one::<Engine>("engine").expect("Required");
+    let pool = PoolType::Queue;
+    let threads = 5;
+    let dir_path = current_dir()?;
 
     info!("kvs-server {}", env!("CARGO_PKG_VERSION"));
     info!("Storage engine: {}", engine.to_string());
     info!("Listening on {}", addr);
 
-    Server::build(*addr, *engine)?.run()?;
+    Server::build(*addr, *engine, pool, threads, dir_path)?.run()?;
 
     Ok(())
 }
