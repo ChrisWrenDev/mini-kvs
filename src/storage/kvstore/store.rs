@@ -3,6 +3,7 @@
 use super::entry::Entry;
 use super::segment::{Segment, SegmentStatus};
 use crate::{KvsError, Result, StoreTrait};
+use dashmap::DashMap;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -45,7 +46,7 @@ pub struct KvStore {
     segments: Arc<RwLock<HashMap<String, Arc<RwLock<Segment>>>>>,
     active: Arc<RwLock<String>>,
     size: Arc<AtomicU64>,
-    index: Arc<RwLock<HashMap<String, Arc<RwLock<CommandPos>>>>>,
+    index: Arc<DashMap<String, CommandPos>>,
     stale_entries: Arc<AtomicU64>,
     compaction: Arc<AtomicBool>,
 }
@@ -57,7 +58,7 @@ impl KvStore {
         let mut segments = HashMap::new();
 
         // Create index
-        let mut index = HashMap::new();
+        let mut index = DashMap::new();
 
         // Get all files
         // Check directory for log files
@@ -133,7 +134,7 @@ impl KvStore {
             active: Arc::new(RwLock::new(active)),
             size: Arc::new(AtomicU64::new(size)),
             stale_entries: Arc::new(AtomicU64::new(stale_entries)),
-            index: Arc::new(RwLock::new(index)),
+            index: Arc::new(index),
             compaction: Arc::new(AtomicBool::new(false)),
         })
     }
@@ -175,13 +176,7 @@ impl KvStore {
             .collect();
 
         // Get list of current files
-        let keys: Vec<String> = self
-            .index
-            .read()
-            .map_err(|_| KvsError::LockPoisoned)?
-            .keys()
-            .cloned()
-            .collect();
+        let keys: Vec<String> = self.index.iter().map(|entry| entry.key().clone()).collect();
 
         // Reset size so compaction size can be calculated
         self.size.store(0, Ordering::SeqCst);
@@ -226,10 +221,7 @@ impl KvStore {
                 .fetch_add(after_size - before_size, Ordering::Relaxed);
 
             // Update index
-            self.index
-                .write()
-                .map_err(|_| KvsError::LockPoisoned)?
-                .insert(key, Arc::new(RwLock::new(cmd_pos)));
+            self.index.insert(key, cmd_pos);
 
             // Check file size
             let segment_size = active_segment.size().map_err(|_| KvsError::FileNotFound)?;
@@ -302,13 +294,7 @@ impl StoreTrait for KvStore {
             .fetch_add(after_size - before_size, Ordering::Relaxed);
 
         // Update index
-        if self
-            .index
-            .write()
-            .map_err(|_| KvsError::LockPoisoned)?
-            .insert(key, Arc::new(RwLock::new(cmd_pos)))
-            .is_some()
-        {
+        if self.index.insert(key, cmd_pos).is_some() {
             // Update stale entries for overwrite
             self.stale_entries.fetch_add(1, Ordering::Relaxed);
         }
@@ -332,14 +318,11 @@ impl StoreTrait for KvStore {
     /// Get a value from store using key
     fn get(&self, key: String) -> Result<Option<String>> {
         // Get log pointer from index
-        let index = self.index.read().map_err(|_| KvsError::LockPoisoned)?;
 
-        let log_pointer = match index.get(&key) {
+        let log_pointer = match self.index.get(&key) {
             Some(ptr) => ptr,
             None => return Ok(None),
         };
-
-        let log_pointer = log_pointer.read().map_err(|_| KvsError::LockPoisoned)?;
 
         let file_id = log_pointer.file_id.to_string();
 
@@ -364,11 +347,7 @@ impl StoreTrait for KvStore {
     }
     /// Remove key/value pair from store
     fn remove(&self, key: String) -> Result<()> {
-        self.index
-            .write()
-            .map_err(|_| KvsError::LockPoisoned)?
-            .remove(&key)
-            .ok_or(KvsError::KeyNotFound)?;
+        self.index.remove(&key).ok_or(KvsError::KeyNotFound)?;
 
         let active_key = self
             .active

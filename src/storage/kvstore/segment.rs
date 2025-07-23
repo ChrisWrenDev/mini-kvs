@@ -1,7 +1,7 @@
 use super::entry::Entry;
 use super::store::CommandPos;
 use crate::{KvsError, Result};
-use std::collections::HashMap;
+use dashmap::DashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -127,7 +127,7 @@ impl Segment {
             length: buffer.len() as u64,
         })
     }
-    pub fn index(&mut self, index: &mut HashMap<String, Arc<RwLock<CommandPos>>>) -> Result<u64> {
+    pub fn index(&mut self, index: &mut DashMap<String, CommandPos>) -> Result<u64> {
         let mut stale_entries = 0;
         let mut read_offset = 0;
         let current_size = self.size()?;
@@ -169,11 +169,11 @@ impl Segment {
                     if index
                         .insert(
                             key.clone(),
-                            Arc::new(RwLock::new(CommandPos {
+                            CommandPos {
                                 file_id: self.file_id.load(Ordering::Acquire),
                                 offset: read_offset,
                                 length: consumed,
-                            })),
+                            },
                         )
                         .is_some()
                     {
