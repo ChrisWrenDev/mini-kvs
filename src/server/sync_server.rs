@@ -47,6 +47,7 @@ impl ServerTrait for SyncServer {
 
         for stream in listener.incoming() {
             if self.shutdown_rx.try_recv().is_ok() {
+                println!("Shutting down server");
                 break;
             }
             let stream = stream?;

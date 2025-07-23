@@ -16,13 +16,13 @@ impl ThreadPoolTrait for QueueThreadPool {
 
         let (sender, receiver) = mpsc::channel();
 
-        let reciever = Arc::new(Mutex::new(receiver));
+        let receiver = Arc::new(Mutex::new(receiver));
 
         let threads = threads.try_into()?;
         let mut workers = Vec::with_capacity(threads);
 
         for id in 0..threads {
-            workers.push(Worker::new(id, Arc::clone(&reciever)));
+            workers.push(Worker::new(id, Arc::clone(&receiver)));
         }
 
         Ok(QueueThreadPool {
@@ -67,18 +67,18 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(id: usize, reciever: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
         let thread = thread::spawn(move || {
             loop {
-                let message = reciever.lock().unwrap().recv();
+                let message = receiver.lock().unwrap().recv();
 
                 match message {
                     Ok(job) => {
-                        println!("Worker {id} got a job; executing.");
+                        // println!("Worker {id} got a job; executing.");
                         job();
                     }
                     Err(_) => {
-                        println!("Worker {id} disconnected; shutting down.");
+                        // println!("Worker {id} disconnected; shutting down.");
                         break;
                     }
                 }
