@@ -11,7 +11,7 @@ pub use naive::NaiveThreadPool;
 pub use queue::QueueThreadPool;
 pub use rayon::RayonThreadPool;
 
-pub trait ThreadPoolTrait {
+pub trait ThreadPoolTrait: Clone + Send + Sync + 'static {
     fn new(threads: u32) -> Result<Self>
     where
         Self: Sized;

@@ -1,4 +1,4 @@
-pub use client::{Client, ClientTrait};
+pub use client::{ClientAsync, ClientSync, ClientTraitAsync, ClientTraitSync};
 pub use common::{KvsError, Result, init_logging};
 pub use config::{ClientConfig, Config, SerializationConfig, ServerConfig};
 pub use protocols::{Protocol, Request, Response};

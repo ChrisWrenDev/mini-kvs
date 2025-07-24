@@ -1,8 +1,8 @@
 use clap::ValueEnum;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use kvs::{
-    Client, ClientTrait, Engine, PoolType, RayonThreadPool, Request, Response, Server, ServerTrait,
-    ThreadPoolTrait,
+    ClientSync, ClientTraitSync, Engine, PoolType, RayonThreadPool, Request, Response, Server,
+    ServerTrait, ThreadPoolTrait,
 };
 use once_cell::sync::Lazy;
 use rand::{Rng, thread_rng};
@@ -101,7 +101,7 @@ fn bench_write(c: &mut Criterion) {
                             let done_tx = done_tx.clone();
 
                             client_pool.spawn(move || {
-                                let mut client = Client::connect(addr).unwrap();
+                                let mut client = ClientSync::connect(addr).unwrap();
                                 let request = Request::Set { key, value };
                                 let res = client.send(request);
                                 if let Err(e) = &res {
@@ -123,7 +123,7 @@ fn bench_write(c: &mut Criterion) {
                 });
                 // Server shutdown
                 server_shutdown.send(()).unwrap();
-                Client::connect(addr).unwrap();
+                ClientSync::connect(addr).unwrap();
                 server_handle.join().expect("Server thread panicked");
                 println!("Finished: {}", &write_id);
             }
@@ -166,7 +166,7 @@ fn bench_read(c: &mut Criterion) {
                 // Prepolulate storage
                 let mut clients = Vec::with_capacity(NUM_VALS);
                 for i in 0..NUM_VALS {
-                    let mut client = Client::connect(addr).unwrap();
+                    let mut client = ClientSync::connect(addr).unwrap();
                     let key = KEYS[i].clone();
                     let value = VALS[i].clone();
                     let request: Request = Request::Set { key, value };
@@ -196,7 +196,7 @@ fn bench_read(c: &mut Criterion) {
                             let done_tx = done_tx.clone();
 
                             client_pool.spawn(move || {
-                                let mut client = Client::connect(addr).unwrap();
+                                let mut client = ClientSync::connect(addr).unwrap();
                                 let request = Request::Get { key };
                                 let res = client.send(request);
 
@@ -225,7 +225,7 @@ fn bench_read(c: &mut Criterion) {
 
                 // Server shutdown
                 server_shutdown.send(()).unwrap();
-                Client::connect(addr).unwrap();
+                ClientSync::connect(addr).unwrap();
                 server_handle.join().unwrap();
                 println!("Finished: {}", &read_id);
             }

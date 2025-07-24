@@ -1,22 +1,22 @@
-use crate::{ClientTrait, Protocol, Request, Response, Result};
+use crate::{ClientTraitSync, Protocol, Request, Response, Result};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use tracing::info;
 
-pub struct KvsClient {
+pub struct KvsClientSync {
     stream: TcpStream,
 }
 
-impl KvsClient {
-    pub fn connect(addr: SocketAddr) -> Result<KvsClient> {
+impl KvsClientSync {
+    pub fn connect(addr: SocketAddr) -> Result<Self> {
         let stream = TcpStream::connect(addr)?;
 
         info!("Server connection");
-        Ok(KvsClient { stream })
+        Ok(Self { stream })
     }
 }
 
-impl ClientTrait for KvsClient {
+impl ClientTraitSync for KvsClientSync {
     fn send(&mut self, request: Request) -> Result<Response> {
         let protocol = Protocol::build();
         let encoded = protocol.encode_request(&request);

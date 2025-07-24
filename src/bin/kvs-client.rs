@@ -1,5 +1,5 @@
 use clap::{Command, arg, value_parser};
-use kvs::{Client, ClientTrait, Request, Response, Result};
+use kvs::{ClientSync, ClientTraitSync, Request, Response, Result};
 use std::net::SocketAddr;
 use std::process::exit;
 use tracing::Level;
@@ -67,7 +67,7 @@ fn main() -> Result<()> {
             let value = matches.get_one::<String>("VALUE").expect("Required");
             let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
 
-            let mut client = Client::connect(*addr)?;
+            let mut client = ClientSync::connect(*addr)?;
             let request: Request = Request::Set {
                 key: key.clone(),
                 value: value.clone(),
@@ -91,7 +91,7 @@ fn main() -> Result<()> {
             let key = matches.get_one::<String>("KEY").expect("Required");
             let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
 
-            let mut client = Client::connect(*addr)?;
+            let mut client = ClientSync::connect(*addr)?;
             let request: Request = Request::Get { key: key.clone() };
 
             let response = client.send(request)?;
@@ -112,7 +112,7 @@ fn main() -> Result<()> {
             let key = matches.get_one::<String>("KEY").expect("Required");
             let addr = matches.get_one::<SocketAddr>("addr").expect("Required");
 
-            let mut client = Client::connect(*addr)?;
+            let mut client = ClientSync::connect(*addr)?;
             let request: Request = Request::Remove { key: key.clone() };
 
             let response = client.send(request)?;

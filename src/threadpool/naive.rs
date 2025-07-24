@@ -1,6 +1,7 @@
 use crate::{Result, ThreadPoolTrait};
 use std::thread;
 
+#[derive(Clone)]
 pub struct NaiveThreadPool;
 
 impl ThreadPoolTrait for NaiveThreadPool {

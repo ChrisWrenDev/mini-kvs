@@ -4,32 +4,45 @@ use std::fmt::{self, Display, Formatter};
 use std::net::SocketAddr;
 
 mod sync_client;
-pub use sync_client::KvsClient;
+pub use sync_client::KvsClientSync;
 
-pub trait ClientTrait {
+mod async_client;
+pub use async_client::KvsClientAsync;
+
+pub trait ClientTraitSync {
     fn send(&mut self, request: Request) -> Result<Response>;
+}
+
+pub trait ClientTraitAsync {
+    async fn send(&mut self, request: Request) -> Result<Response>;
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum ClientType {
     Sync,
+    Async,
 }
 
 impl Display for ClientType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let s = match self {
             ClientType::Sync => "sync",
+            ClientType::Async => "async",
         };
         write!(f, "{}", s)
     }
 }
 
-pub enum Client {
-    Sync(KvsClient),
+pub enum ClientSync {
+    Sync(KvsClientSync),
 }
 
-impl Client {
-    pub fn connect(addr: SocketAddr) -> Result<Client> {
+pub enum ClientAsync {
+    Async(KvsClientAsync),
+}
+
+impl ClientSync {
+    pub fn connect(addr: SocketAddr) -> Result<Self> {
         //  let config = Config::from_file("../config/config.toml")?;
         //  match config.client {
         //      ClientConfig::Sync => {
@@ -38,15 +51,29 @@ impl Client {
         //      }
         //  }
 
-        let client = sync_client::KvsClient::connect(addr)?;
-        Ok(Client::Sync(client))
+        let client = sync_client::KvsClientSync::connect(addr)?;
+        Ok(ClientSync::Sync(client))
     }
 }
 
-impl ClientTrait for Client {
+impl ClientTraitSync for ClientSync {
     fn send(&mut self, request: Request) -> Result<Response> {
         match self {
-            Client::Sync(client) => client.send(request),
+            ClientSync::Sync(client) => client.send(request),
+        }
+    }
+}
+
+impl ClientAsync {
+    pub async fn connect(addr: SocketAddr) -> Result<Self> {
+        let client = async_client::KvsClientAsync::connect(addr).await?;
+        Ok(ClientAsync::Async(client))
+    }
+}
+impl ClientTraitAsync for ClientAsync {
+    async fn send(&mut self, request: Request) -> Result<Response> {
+        match self {
+            ClientAsync::Async(client) => client.send(request).await,
         }
     }
 }

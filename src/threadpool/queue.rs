@@ -61,6 +61,15 @@ impl Drop for QueueThreadPool {
     }
 }
 
+impl Clone for QueueThreadPool {
+    fn clone(&self) -> Self {
+        QueueThreadPool {
+            workers: Vec::new(), // Workers not cloned; new clones can't shut down threads
+            sender: self.sender.clone(),
+        }
+    }
+}
+
 struct Worker {
     id: usize,
     thread: Option<thread::JoinHandle<()>>,
