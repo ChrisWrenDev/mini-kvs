@@ -85,14 +85,14 @@ This project is divided into **five stages**, each introducing new concepts and 
 
 | Task                                   | Status       | Notes                             |
 |----------------------------------------|--------------|-----------------------------------|
-| Part 1: Multithreading                 |  🔲 TODO     | description  |
-| Part 2: Creating a shared KvsEngine    |  🔲 TODO     | description  |
-| Part 3: Add multithreading to KvServer |  🔲 TODO     | description  |
-| Part 4: Creating a thread pool         |  🔲 TODO     | description  |
-| Part 5: Abstracted thread pools        |  🔲 TODO     | description  |
-| Part 6: Evaluating thread pool         |  🔲 TODO     | description  |
-| Part 7: Evaluating other thread pools and engines |  🔲 TODO     | description  |
-| Part 8: Lock-free readers              |  🔲 TODO     | description  |
+| Part 1: Multithreading                 |  ✅ Done     | description  |
+| Part 2: Creating a shared KvsEngine    |  ✅ Done     | description  |
+| Part 3: Add multithreading to KvServer |  ✅ Done     | description  |
+| Part 4: Creating a thread pool         |  ✅ Done     | description  |
+| Part 5: Abstracted thread pools        |  ✅ Done     | description  |
+| Part 6: Evaluating thread pool         |  ✅ Done     | description  |
+| Part 7: Evaluating other thread pools and engines |  ✅ Done     | description  |
+| Part 8: Lock-free readers              |  ✅ Done     | description  |
 
 ---
 
