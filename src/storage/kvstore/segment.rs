@@ -7,6 +7,215 @@ use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
+use tracing::{error, info};
+
+#[derive(Debug)]
+pub struct SegmentReader {
+    pub file_id: u64,
+    pub reader: BufReader<File>,
+    pub size: u64,
+}
+
+impl SegmentReader {
+    pub fn open(dir_path: &Path, file_id: u64) -> Result<SegmentReader> {
+        // Create empty file
+        let file_name = format!("{file_id}.log");
+        let path = dir_path.join(file_name);
+
+        // Reader handle
+        let reader_file = OpenOptions::new().read(true).open(&path)?;
+
+        // File size
+        let size = reader_file.metadata()?.len();
+
+        // Create Segment
+        Ok(SegmentReader {
+            file_id,
+            reader: BufReader::new(reader_file),
+            size,
+        })
+    }
+    pub fn read(&mut self, offset: u64, length: u64) -> Result<Vec<u8>> {
+        // Get key-value at a given offset (provided by index)
+
+        let mut buffer = vec![0; length as usize];
+
+        // Find file offset
+        self.reader.seek(SeekFrom::Start(offset))?;
+
+        // Read bytes
+        self.reader.read_exact(&mut buffer)?;
+
+        // Deserialise value
+        // Return value
+        Ok(buffer)
+    }
+    pub fn index(&mut self, index: &mut DashMap<String, CommandPos>) -> Result<u64> {
+        let mut stale_entries = 0;
+        let mut read_offset = 0;
+
+        let file_ref = self.reader.get_ref();
+        let metadata = file_ref.metadata()?;
+        let current_size = metadata.len();
+
+        // loop through file
+        while read_offset + 8 + 8 <= current_size {
+            // Calculate size of entry
+            let size_buffer = match self.read(read_offset, 16) {
+                Ok(e) => e,
+                Err(_) => break,
+            };
+
+            let key_size = u64::from_le_bytes(size_buffer[0..8].try_into().unwrap());
+            let value_size = u64::from_le_bytes(size_buffer[8..16].try_into().unwrap());
+
+            let entry_len = 16 + key_size + value_size;
+
+            // Read buffer (slightly larger than Entry)
+            let buffer = match self.read(read_offset, entry_len) {
+                Ok(buf) => buf,
+                Err(_) => break, // incomplete or corrupted entry
+            };
+
+            // Deserialize Entry
+            let slice = buffer.as_slice();
+            let entry = match Entry::deserialize(slice) {
+                Ok(e) => e,
+                Err(_) => break,
+            };
+
+            // Size of Entry
+            let mut consumed = 8u64 + 8u64; // ksz + vsz
+
+            match &entry {
+                Entry::Set { key, value } => {
+                    let entry_length = key.len() as u64 + value.len() as u64;
+                    consumed += entry_length;
+
+                    if index
+                        .insert(
+                            key.clone(),
+                            CommandPos {
+                                file_id: self.file_id,
+                                offset: read_offset,
+                                length: consumed,
+                            },
+                        )
+                        .is_some()
+                    {
+                        stale_entries += 1;
+                    }
+                }
+                Entry::Remove { key } => {
+                    consumed += key.len() as u64;
+                    if index.remove(key).is_some() {
+                        stale_entries += 1;
+                    }
+                }
+            }
+
+            // Update read offset
+            read_offset += consumed;
+        }
+
+        Ok(stale_entries)
+    }
+}
+
+#[derive(Debug)]
+pub struct SegmentWriter {
+    pub file_id: u64,
+    pub offset: AtomicU64,
+    pub size: AtomicU64,
+    pub writer: BufWriter<File>,
+}
+
+impl SegmentWriter {
+    pub fn new(dir_path: &Path, file_id: u64) -> Result<SegmentWriter> {
+        // Create empty file
+        let file_name = format!("{file_id}.log");
+        let path = dir_path.join(file_name);
+
+        // Write handle
+        let writer_file = OpenOptions::new()
+            .write(true)
+            .create_new(true) // Fail if file exists
+            .open(&path)?;
+
+        // File size
+        let metadata = writer_file.metadata()?;
+        let size = metadata.len();
+
+        // Create Segment
+        Ok(SegmentWriter {
+            file_id,
+            offset: AtomicU64::new(size),
+            size: AtomicU64::new(size),
+            writer: BufWriter::new(writer_file),
+        })
+    }
+    pub fn open(dir_path: &Path, file_id: u64) -> Result<SegmentWriter> {
+        // Create empty file
+        let file_name = format!("{file_id}.log");
+        let path = dir_path.join(file_name);
+
+        // Write handle
+        let mut writer_file = OpenOptions::new().write(true).open(&path)?;
+
+        // Seek the writer to the end of file
+        let size = writer_file.seek(SeekFrom::End(0))?;
+
+        // Create Segment
+        Ok(SegmentWriter {
+            file_id,
+            offset: AtomicU64::new(size),
+            size: AtomicU64::new(size),
+            writer: BufWriter::new(writer_file),
+        })
+    }
+    pub fn append(&mut self, entry: Entry) -> Result<CommandPos> {
+        // Add key-value and return offset for index
+
+        if let Entry::Set { ref value, .. } = entry {
+            if value.is_empty() {
+                return Err(KvsError::EmptyValue);
+            }
+        }
+        // Current Segment Offset
+        let cur_offset = self.offset.load(Ordering::Acquire);
+
+        let buffer = entry.serialize();
+
+        // Write to file
+        self.writer.write_all(&buffer)?;
+        self.writer.flush()?;
+        self.writer.get_ref().sync_data()?;
+
+        // Update segment offset
+        self.offset
+            .fetch_add(buffer.len() as u64, Ordering::Relaxed);
+
+        // Ensure segment size reflects file size growth
+        self.size
+            .store(self.offset.load(Ordering::Acquire), Ordering::SeqCst);
+
+        // Update log pointer
+        Ok(CommandPos {
+            file_id: self.file_id,
+            offset: cur_offset,
+            length: buffer.len() as u64,
+        })
+    }
+    pub fn size(&self) -> Result<u64> {
+        // Measure if compaction is needed
+        let file_ref = self.writer.get_ref();
+        let metadata = file_ref.metadata()?;
+        let size = metadata.len();
+        Ok(size)
+    }
+}
+
+// -------------------------------------------------------- //
 
 #[derive(Debug, Clone)]
 pub enum SegmentStatus {

@@ -26,6 +26,7 @@ impl SyncServer {
         dir_path: PathBuf,
     ) -> Result<SyncServer> {
         let store = Arc::new(Mutex::new(Storage::build(dir_path, engine)?));
+
         let pool = ThreadPool::run(pool, num_threads)?;
 
         let (shutdown_tx, shutdown_rx) = channel::<()>();

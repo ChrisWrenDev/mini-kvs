@@ -1,17 +1,18 @@
 #![deny(missing_docs)]
 //! In Memory key/value store.
 use super::entry::Entry;
-use super::segment::{Segment, SegmentStatus};
+use super::segment::{SegmentReader, SegmentWriter};
 use crate::{KvsError, Result, StoreTrait};
 use dashmap::DashMap;
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
+use tracing::{error, info};
 
 const MAX_LOG_FILE_SIZE: u64 = 4 * 1024 * 1024; // 4 MB
-const COMPACTION_THRESHOLD: u64 = 1024 * 1024; // 1 MB
+// const COMPACTION_THRESHOLD: u64 = 1024 * 1024; // 1 MB
+const COMPACTION_THRESHOLD: u64 = 1024; // 1 MB
 
 #[derive(Debug, Clone)]
 pub struct CommandPos {
@@ -40,11 +41,11 @@ pub struct CommandPos {
 ///     Ok(())
 /// }
 /// ```
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct KvStore {
     base_dir: PathBuf,
-    segments: Arc<RwLock<HashMap<String, Arc<RwLock<Segment>>>>>,
-    active: Arc<RwLock<String>>,
+    readers: Arc<DashMap<String, SegmentReader>>,
+    writer: Arc<Mutex<SegmentWriter>>,
     size: Arc<AtomicU64>,
     index: Arc<DashMap<String, CommandPos>>,
     stale_entries: Arc<AtomicU64>,
@@ -55,7 +56,7 @@ impl KvStore {
     /// Create a key/value store
     pub fn open(dir_path: PathBuf) -> Result<KvStore> {
         // Add segments to vector
-        let mut segments = HashMap::new();
+        let readers = DashMap::new();
 
         // Create index
         let mut index = DashMap::new();
@@ -78,7 +79,7 @@ impl KvStore {
         file_ids.sort_unstable();
 
         // Create segment for each log file
-        let mut active: String = file_ids.iter().copied().max().unwrap_or(0).to_string();
+        let active = file_ids.iter().copied().max().unwrap_or(1);
 
         // Calculate size of log
         let mut size = 0;
@@ -86,52 +87,37 @@ impl KvStore {
         // Calculate stale entries in log
         let mut stale_entries = 0;
 
+        let writer = match !file_ids.is_empty() {
+            true => SegmentWriter::open(&dir_path, active)?,
+            false => SegmentWriter::new(&dir_path, active)?,
+        };
+
+        // If no files, create one
+        if file_ids.is_empty() {
+            file_ids.push(active);
+        }
+
         // loop newest to oldest (highest to lowest)
         for id in file_ids {
-            // Determine status
-            let status = if id.to_string() == active {
-                SegmentStatus::Active
-            } else {
-                SegmentStatus::Archived
-            };
-
             // Create segment for file
-            let mut segment = Segment::open(&dir_path, id, status)?;
+            let mut reader = SegmentReader::open(&dir_path, id)?;
 
             // Update index with segment
-            let segment_stale_entries = segment.index(&mut index)?;
-
-            // Count stale entries (rm, duplicate)
-            if segment_stale_entries > 0 {
-                let mut status = segment.status.write().map_err(|_| KvsError::LockPoisoned)?;
-                if matches!(*status, SegmentStatus::Archived) {
-                    // stale entries = sealed
-                    *status = SegmentStatus::Sealed;
-                }
-            }
+            let segment_stale_entries = reader.index(&mut index)?;
 
             stale_entries += segment_stale_entries;
 
             // update log size
-            size += segment.size.load(Ordering::Acquire);
+            size += reader.size;
 
-            // Add segment to segments hashmap
-            segments.insert(id.to_string(), Arc::new(RwLock::new(segment)));
-        }
-
-        // If no files, create one
-        if segments.is_empty() {
-            let file_id = 1;
-            active = format!("{file_id}");
-            let segment = Segment::new(&dir_path, file_id)?;
-            segments.insert(active.clone(), Arc::new(RwLock::new(segment)));
+            readers.insert(id.to_string(), reader);
         }
 
         // Create Log
         Ok(KvStore {
             base_dir: dir_path,
-            segments: Arc::new(RwLock::new(segments)),
-            active: Arc::new(RwLock::new(active)),
+            readers: Arc::new(readers),
+            writer: Arc::new(Mutex::new(writer)),
             size: Arc::new(AtomicU64::new(size)),
             stale_entries: Arc::new(AtomicU64::new(stale_entries)),
             index: Arc::new(index),
@@ -140,39 +126,29 @@ impl KvStore {
     }
     fn rollover(&self) -> Result<()> {
         // Create new segment
-        let active_file_id = self
-            .active
-            .read()
-            .map_err(|_| KvsError::LockPoisoned)? // or just unwrap if using `parking_lot`
-            .parse::<u64>()
-            .map_err(|_| KvsError::FileNotFound)?;
+        let writer_ref = Arc::clone(&self.writer);
+
+        let mut writer = writer_ref.lock().map_err(|_| KvsError::LockPoisoned)?;
+
+        let active_file_id = writer.file_id;
 
         let new_file_id = 1 + active_file_id;
 
-        let new_segment = Arc::new(RwLock::new(
-            Segment::new(self.base_dir.as_path(), new_file_id)
-                .map_err(|_| KvsError::FileNotFound)?,
-        ));
+        let new_writer = SegmentWriter::new(self.base_dir.as_path(), new_file_id)?;
+        *writer = new_writer;
 
-        self.segments
-            .write()
-            .map_err(|_| KvsError::LockPoisoned)?
-            .insert(new_file_id.to_string(), new_segment);
-
-        // Update active segment
-        *self.active.write().map_err(|_| KvsError::LockPoisoned)? = new_file_id.to_string();
+        let new_reader = SegmentReader::open(self.base_dir.as_path(), new_file_id)?;
+        self.readers.insert(new_file_id.to_string(), new_reader);
 
         Ok(())
     }
     fn compact(&self) -> Result<()> {
         self.compaction.store(true, Ordering::SeqCst);
 
-        let old_segment_keys: Vec<String> = self
-            .segments
-            .read()
-            .map_err(|_| KvsError::LockPoisoned)?
-            .keys()
-            .cloned()
+        let old_reader_keys: Vec<String> = self
+            .readers
+            .iter()
+            .map(|entry| entry.key().clone())
             .collect();
 
         // Get list of current files
@@ -192,31 +168,19 @@ impl KvStore {
                 .map_err(|_| KvsError::KeyNotFound)?
                 .ok_or(KvsError::KeyNotFound)?;
 
-            let active_key = self
-                .active
-                .read()
-                .map_err(|_| KvsError::LockPoisoned)?
-                .clone();
+            let mut writer = self.writer.lock().map_err(|_| KvsError::KeyNotFound)?;
 
-            let mut segments = self.segments.write().map_err(|_| KvsError::LockPoisoned)?;
+            let before_size = writer.size.load(Ordering::Acquire);
 
-            // add value to new file
-            let mut active_segment = segments
-                .get_mut(&active_key)
-                .ok_or(KvsError::FileNotFound)?
-                .write()
-                .map_err(|_| KvsError::LockPoisoned)?;
-
-            let before_size = active_segment.size.load(Ordering::Acquire);
-
-            let cmd_pos = active_segment
+            let cmd_pos = writer
                 .append(Entry::Set {
                     key: key.clone(),
                     value,
                 })
                 .map_err(|_| KvsError::KeyNotFound)?;
 
-            let after_size = active_segment.offset.load(Ordering::Acquire);
+            let after_size = writer.offset.load(Ordering::Acquire);
+
             self.size
                 .fetch_add(after_size - before_size, Ordering::Relaxed);
 
@@ -224,9 +188,9 @@ impl KvStore {
             self.index.insert(key, cmd_pos);
 
             // Check file size
-            let segment_size = active_segment.size().map_err(|_| KvsError::FileNotFound)?;
+            let writer_size = writer.size().map_err(|_| KvsError::FileNotFound)?;
 
-            if segment_size > MAX_LOG_FILE_SIZE {
+            if writer_size > MAX_LOG_FILE_SIZE {
                 self.rollover()?;
             }
         }
@@ -235,20 +199,18 @@ impl KvStore {
         self.stale_entries.store(0, Ordering::SeqCst);
 
         // Drop all file handles before deleting files
-        let mut old_segments: Vec<Arc<RwLock<Segment>>> = vec![];
+        let mut old_readers: Vec<SegmentReader> = vec![];
 
-        let mut segments = self.segments.write().map_err(|_| KvsError::LockPoisoned)?;
-
-        for segment_key in &old_segment_keys {
-            if let Some(seg) = segments.remove(segment_key) {
-                old_segments.push(seg);
+        for reader_key in &old_reader_keys {
+            if let Some((_, value)) = self.readers.remove(reader_key) {
+                old_readers.push(value);
             }
         }
-        drop(old_segments);
+        drop(old_readers);
 
         // Remove old files (active and less)
-        for segment_key in old_segment_keys {
-            let file_name = format!("{segment_key}.log");
+        for reader_key in old_reader_keys {
+            let file_name = format!("{reader_key}.log");
             fs::remove_file(self.base_dir.join(file_name))?;
         }
 
@@ -265,31 +227,20 @@ impl StoreTrait for KvStore {
             return Err(KvsError::EmptyValue);
         }
 
-        let active_key = self
-            .active
-            .read()
-            .map_err(|_| KvsError::LockPoisoned)?
-            .clone();
-
-        let mut segments = self.segments.write().map_err(|_| KvsError::LockPoisoned)?;
-
         // add value to new file
-        let mut active_segment = segments
-            .get_mut(&active_key)
-            .ok_or(KvsError::FileNotFound)?
-            .write()
-            .map_err(|_| KvsError::LockPoisoned)?;
+        let mut writer = self.writer.lock().map_err(|_| KvsError::KeyNotFound)?;
 
-        let before_size = active_segment.size.load(Ordering::Acquire);
+        let before_size = writer.size.load(Ordering::Acquire);
 
-        let cmd_pos = active_segment
+        let cmd_pos = writer
             .append(Entry::Set {
                 key: key.clone(),
                 value,
             })
             .map_err(|_| KvsError::KeyNotFound)?;
 
-        let after_size = active_segment.offset.load(Ordering::Acquire);
+        let after_size = writer.offset.load(Ordering::Acquire);
+
         self.size
             .fetch_add(after_size - before_size, Ordering::Relaxed);
 
@@ -307,9 +258,9 @@ impl StoreTrait for KvStore {
         }
 
         // Check file size
-        let segment_size = active_segment.size().map_err(|_| KvsError::FileNotFound)?;
+        let writer_size = writer.size().map_err(|_| KvsError::FileNotFound)?;
 
-        if segment_size > MAX_LOG_FILE_SIZE {
+        if writer_size > MAX_LOG_FILE_SIZE {
             self.rollover()?;
         }
 
@@ -326,16 +277,15 @@ impl StoreTrait for KvStore {
 
         let file_id = log_pointer.file_id.to_string();
 
-        let mut segments = self.segments.write().map_err(|_| KvsError::LockPoisoned)?;
+        let readers = Arc::clone(&self.readers);
 
-        let mut segment = segments
-            .get_mut(&file_id)
-            .ok_or(KvsError::FileNotFound)?
-            .write()
-            .map_err(|_| KvsError::LockPoisoned)?;
+        let mut reader = match readers.get_mut(&file_id) {
+            Some(value) => value,
+            None => return Err(KvsError::FileNotFound),
+        };
 
         // Has all the data (kv length, val length, key, value)
-        let bytes = segment.read(log_pointer.offset, log_pointer.length)?;
+        let bytes = reader.read(log_pointer.offset, log_pointer.length)?;
 
         let entry = Entry::deserialize(&bytes)?;
 
@@ -349,27 +299,15 @@ impl StoreTrait for KvStore {
     fn remove(&self, key: String) -> Result<()> {
         self.index.remove(&key).ok_or(KvsError::KeyNotFound)?;
 
-        let active_key = self
-            .active
-            .read()
-            .map_err(|_| KvsError::LockPoisoned)?
-            .clone();
+        let mut writer = self.writer.lock().map_err(|_| KvsError::KeyNotFound)?;
 
-        let mut segments = self.segments.write().map_err(|_| KvsError::LockPoisoned)?;
+        let before_size = writer.offset.load(Ordering::Acquire);
 
-        let mut active_segment = segments
-            .get_mut(&active_key)
-            .ok_or(KvsError::FileNotFound)?
-            .write()
-            .map_err(|_| KvsError::LockPoisoned)?;
-
-        let before_size = active_segment.offset.load(Ordering::Acquire);
-
-        active_segment
+        writer
             .append(Entry::Remove { key })
             .map_err(|_| KvsError::KeyNotFound)?;
 
-        let after_size = active_segment.offset.load(Ordering::Acquire);
+        let after_size = writer.offset.load(Ordering::Acquire);
         self.size
             .fetch_add(after_size - before_size, Ordering::Relaxed);
 
@@ -383,9 +321,9 @@ impl StoreTrait for KvStore {
         }
 
         // Check file size
-        let segment_size = active_segment.size().map_err(|_| KvsError::FileNotFound)?;
+        let writer_size = writer.size().map_err(|_| KvsError::FileNotFound)?;
 
-        if segment_size > MAX_LOG_FILE_SIZE {
+        if writer_size > MAX_LOG_FILE_SIZE {
             self.rollover()?;
         }
 
