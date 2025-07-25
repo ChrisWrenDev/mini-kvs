@@ -3,11 +3,11 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use tracing::info;
 
-pub struct KvsClientSync {
+pub struct TsaClientSync {
     stream: TcpStream,
 }
 
-impl KvsClientSync {
+impl TsaClientSync {
     pub fn connect(addr: SocketAddr) -> Result<Self> {
         let stream = TcpStream::connect(addr)?;
 
@@ -16,7 +16,7 @@ impl KvsClientSync {
     }
 }
 
-impl ClientTraitSync for KvsClientSync {
+impl ClientTraitSync for TsaClientSync {
     fn send(&mut self, request: Request) -> Result<Response> {
         let protocol = Protocol::build();
         let encoded = protocol.encode_request(&request);

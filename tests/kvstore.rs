@@ -1,7 +1,7 @@
-use kvs::{KvStore, Result, StoreTrait};
 use std::sync::{Arc, Barrier};
 use std::thread;
 use tempfile::TempDir;
+use tessera::{KvStore, Result, StoreTrait};
 use walkdir::WalkDir;
 
 // Should get previously stored value.

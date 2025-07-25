@@ -1,13 +1,13 @@
 use clap::{Command, arg, value_parser};
-use kvs::{ClientSync, ClientTraitSync, Request, Response, Result};
 use std::net::SocketAddr;
 use std::process::exit;
+use tessera::{ClientSync, ClientTraitSync, Request, Response, Result};
 use tracing::Level;
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:4000";
 
 fn cli() -> Command {
-    Command::new("kvs-client")
+    Command::new("tsa-client")
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .version(env!("CARGO_PKG_VERSION"))

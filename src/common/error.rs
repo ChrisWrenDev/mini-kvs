@@ -1,7 +1,7 @@
 use failure::Fail;
 
 #[derive(Fail, Debug)]
-pub enum KvsError {
+pub enum TsaError {
     #[fail(display = "I/O error: {}", _0)]
     Io(#[cause] std::io::Error),
 
@@ -60,71 +60,71 @@ pub enum KvsError {
     LockPoisoned,
 }
 
-pub type Result<T> = std::result::Result<T, KvsError>;
+pub type Result<T> = std::result::Result<T, TsaError>;
 
-impl From<std::io::Error> for KvsError {
+impl From<std::io::Error> for TsaError {
     fn from(err: std::io::Error) -> Self {
-        KvsError::Io(err)
+        TsaError::Io(err)
     }
 }
 
-impl From<serde_json::Error> for KvsError {
+impl From<serde_json::Error> for TsaError {
     fn from(err: serde_json::Error) -> Self {
-        KvsError::Serde(err)
+        TsaError::Serde(err)
     }
 }
 
-impl From<toml::de::Error> for KvsError {
+impl From<toml::de::Error> for TsaError {
     fn from(err: toml::de::Error) -> Self {
-        KvsError::Toml(err)
+        TsaError::Toml(err)
     }
 }
 
-impl From<std::str::Utf8Error> for KvsError {
+impl From<std::str::Utf8Error> for TsaError {
     fn from(err: std::str::Utf8Error) -> Self {
-        KvsError::Utf8(err)
+        TsaError::Utf8(err)
     }
 }
 
-impl From<std::string::FromUtf8Error> for KvsError {
-    fn from(err: std::string::FromUtf8Error) -> KvsError {
-        KvsError::FromUtf8(err)
+impl From<std::string::FromUtf8Error> for TsaError {
+    fn from(err: std::string::FromUtf8Error) -> TsaError {
+        TsaError::FromUtf8(err)
     }
 }
 
-impl From<std::num::TryFromIntError> for KvsError {
-    fn from(err: std::num::TryFromIntError) -> KvsError {
-        KvsError::FromInt(err)
+impl From<std::num::TryFromIntError> for TsaError {
+    fn from(err: std::num::TryFromIntError) -> TsaError {
+        TsaError::FromInt(err)
     }
 }
 
-impl From<sled::Error> for KvsError {
-    fn from(err: sled::Error) -> KvsError {
-        KvsError::Sled(err)
+impl From<sled::Error> for TsaError {
+    fn from(err: sled::Error) -> TsaError {
+        TsaError::Sled(err)
     }
 }
 
-impl From<rayon::ThreadPoolBuildError> for KvsError {
-    fn from(err: rayon::ThreadPoolBuildError) -> KvsError {
-        KvsError::Rayon(err)
+impl From<rayon::ThreadPoolBuildError> for TsaError {
+    fn from(err: rayon::ThreadPoolBuildError) -> TsaError {
+        TsaError::Rayon(err)
     }
 }
 
-impl From<String> for KvsError {
+impl From<String> for TsaError {
     fn from(s: String) -> Self {
-        KvsError::Protocol(s)
+        TsaError::Protocol(s)
     }
 }
 
-impl From<&str> for KvsError {
+impl From<&str> for TsaError {
     fn from(s: &str) -> Self {
-        KvsError::Protocol(s.to_string())
+        TsaError::Protocol(s.to_string())
     }
 }
 
-impl From<std::sync::PoisonError<std::sync::MutexGuard<'_, sled::Db>>> for KvsError {
+impl From<std::sync::PoisonError<std::sync::MutexGuard<'_, sled::Db>>> for TsaError {
     fn from(err: std::sync::PoisonError<std::sync::MutexGuard<'_, sled::Db>>) -> Self {
-        KvsError::LockError(err.to_string())
+        TsaError::LockError(err.to_string())
     }
 }
 
@@ -133,33 +133,33 @@ impl
         std::sync::PoisonError<
             std::sync::MutexGuard<'_, std::collections::HashMap<String, String>>,
         >,
-    > for KvsError
+    > for TsaError
 {
     fn from(
         err: std::sync::PoisonError<
             std::sync::MutexGuard<'_, std::collections::HashMap<String, String>>,
         >,
     ) -> Self {
-        KvsError::LockError(err.to_string())
+        TsaError::LockError(err.to_string())
     }
 }
 
 impl From<std::sync::PoisonError<std::sync::MutexGuard<'_, std::io::BufReader<std::fs::File>>>>
-    for KvsError
+    for TsaError
 {
     fn from(
         err: std::sync::PoisonError<std::sync::MutexGuard<'_, std::io::BufReader<std::fs::File>>>,
     ) -> Self {
-        KvsError::LockError(err.to_string())
+        TsaError::LockError(err.to_string())
     }
 }
 
 impl From<std::sync::PoisonError<std::sync::MutexGuard<'_, std::io::BufWriter<std::fs::File>>>>
-    for KvsError
+    for TsaError
 {
     fn from(
         err: std::sync::PoisonError<std::sync::MutexGuard<'_, std::io::BufWriter<std::fs::File>>>,
     ) -> Self {
-        KvsError::LockError(err.to_string())
+        TsaError::LockError(err.to_string())
     }
 }

@@ -1,6 +1,6 @@
 use crate::{
-    Engine, KvsError, PoolType, Protocol, Request, Response, Result, ServerTrait, Storage,
-    StoreTrait, ThreadPool,
+    Engine, PoolType, Protocol, Request, Response, Result, ServerTrait, Storage, StoreTrait,
+    ThreadPool, TsaError,
 };
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -76,7 +76,7 @@ fn handle_connecton(mut stream: TcpStream, store: Arc<Mutex<Storage>>) -> Result
     let protocol = Protocol::build();
     let request = protocol.decode_request(&buffer)?;
 
-    let store = store.lock().map_err(|_| KvsError::LockPoisoned)?;
+    let store = store.lock().map_err(|_| TsaError::LockPoisoned)?;
     let response: Response = match request {
         Request::Set { key, value } => {
             store.set(key, value)?;

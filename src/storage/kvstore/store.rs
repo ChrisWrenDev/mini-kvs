@@ -2,7 +2,7 @@
 //! In Memory key/value store.
 use super::entry::Entry;
 use super::segment::{SegmentReader, SegmentWriter};
-use crate::{KvsError, Result, StoreTrait};
+use crate::{Result, StoreTrait, TsaError};
 use dashmap::DashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -128,7 +128,7 @@ impl KvStore {
         // Create new segment
         let writer_ref = Arc::clone(&self.writer);
 
-        let mut writer = writer_ref.lock().map_err(|_| KvsError::LockPoisoned)?;
+        let mut writer = writer_ref.lock().map_err(|_| TsaError::LockPoisoned)?;
 
         let active_file_id = writer.file_id;
 
@@ -165,10 +165,10 @@ impl KvStore {
             // get value
             let value = self
                 .get(key.clone())
-                .map_err(|_| KvsError::KeyNotFound)?
-                .ok_or(KvsError::KeyNotFound)?;
+                .map_err(|_| TsaError::KeyNotFound)?
+                .ok_or(TsaError::KeyNotFound)?;
 
-            let mut writer = self.writer.lock().map_err(|_| KvsError::KeyNotFound)?;
+            let mut writer = self.writer.lock().map_err(|_| TsaError::KeyNotFound)?;
 
             let before_size = writer.size.load(Ordering::Acquire);
 
@@ -177,7 +177,7 @@ impl KvStore {
                     key: key.clone(),
                     value,
                 })
-                .map_err(|_| KvsError::KeyNotFound)?;
+                .map_err(|_| TsaError::KeyNotFound)?;
 
             let after_size = writer.offset.load(Ordering::Acquire);
 
@@ -188,7 +188,7 @@ impl KvStore {
             self.index.insert(key, cmd_pos);
 
             // Check file size
-            let writer_size = writer.size().map_err(|_| KvsError::FileNotFound)?;
+            let writer_size = writer.size().map_err(|_| TsaError::FileNotFound)?;
 
             if writer_size > MAX_LOG_FILE_SIZE {
                 self.rollover()?;
@@ -224,11 +224,11 @@ impl StoreTrait for KvStore {
     /// Add a key/value pair to store
     fn set(&self, key: String, value: String) -> Result<()> {
         if value.is_empty() {
-            return Err(KvsError::EmptyValue);
+            return Err(TsaError::EmptyValue);
         }
 
         // add value to new file
-        let mut writer = self.writer.lock().map_err(|_| KvsError::KeyNotFound)?;
+        let mut writer = self.writer.lock().map_err(|_| TsaError::KeyNotFound)?;
 
         let before_size = writer.size.load(Ordering::Acquire);
 
@@ -237,7 +237,7 @@ impl StoreTrait for KvStore {
                 key: key.clone(),
                 value,
             })
-            .map_err(|_| KvsError::KeyNotFound)?;
+            .map_err(|_| TsaError::KeyNotFound)?;
 
         let after_size = writer.offset.load(Ordering::Acquire);
 
@@ -258,7 +258,7 @@ impl StoreTrait for KvStore {
         }
 
         // Check file size
-        let writer_size = writer.size().map_err(|_| KvsError::FileNotFound)?;
+        let writer_size = writer.size().map_err(|_| TsaError::FileNotFound)?;
 
         if writer_size > MAX_LOG_FILE_SIZE {
             self.rollover()?;
@@ -281,7 +281,7 @@ impl StoreTrait for KvStore {
 
         let mut reader = match readers.get_mut(&file_id) {
             Some(value) => value,
-            None => return Err(KvsError::FileNotFound),
+            None => return Err(TsaError::FileNotFound),
         };
 
         // Has all the data (kv length, val length, key, value)
@@ -297,15 +297,15 @@ impl StoreTrait for KvStore {
     }
     /// Remove key/value pair from store
     fn remove(&self, key: String) -> Result<()> {
-        self.index.remove(&key).ok_or(KvsError::KeyNotFound)?;
+        self.index.remove(&key).ok_or(TsaError::KeyNotFound)?;
 
-        let mut writer = self.writer.lock().map_err(|_| KvsError::KeyNotFound)?;
+        let mut writer = self.writer.lock().map_err(|_| TsaError::KeyNotFound)?;
 
         let before_size = writer.offset.load(Ordering::Acquire);
 
         writer
             .append(Entry::Remove { key })
-            .map_err(|_| KvsError::KeyNotFound)?;
+            .map_err(|_| TsaError::KeyNotFound)?;
 
         let after_size = writer.offset.load(Ordering::Acquire);
         self.size
@@ -321,7 +321,7 @@ impl StoreTrait for KvStore {
         }
 
         // Check file size
-        let writer_size = writer.size().map_err(|_| KvsError::FileNotFound)?;
+        let writer_size = writer.size().map_err(|_| TsaError::FileNotFound)?;
 
         if writer_size > MAX_LOG_FILE_SIZE {
             self.rollover()?;
@@ -330,9 +330,3 @@ impl StoreTrait for KvStore {
         Ok(())
     }
 }
-
-// impl Clone for KvStore {
-//     fn clone(&self) -> Self {
-//         KvStore { ..self.clone() }
-//     }
-// }

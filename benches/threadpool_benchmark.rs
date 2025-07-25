@@ -1,15 +1,15 @@
 use clap::ValueEnum;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use kvs::{
-    ClientSync, ClientTraitSync, Engine, PoolType, RayonThreadPool, Request, Response, Server,
-    ServerTrait, ThreadPoolTrait,
-};
 use once_cell::sync::Lazy;
 use rand::{Rng, thread_rng};
 use std::net::{SocketAddr, TcpStream};
 use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
+use tessera::{
+    ClientSync, ClientTraitSync, Engine, PoolType, RayonThreadPool, Request, Response, Server,
+    ServerTrait, ThreadPoolTrait,
+};
 
 const NUM_VALS: usize = 1000;
 

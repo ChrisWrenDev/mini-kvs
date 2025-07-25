@@ -1,4 +1,4 @@
-use kvs::{KvMemory, Result, StoreTrait};
+use tessera::{KvMemory, Result, StoreTrait};
 
 // Should get previously stored value
 #[test]

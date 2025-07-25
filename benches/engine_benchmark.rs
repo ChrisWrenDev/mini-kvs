@@ -1,9 +1,9 @@
 use clap::ValueEnum;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use kvs::{Engine, Storage, StoreTrait};
 use once_cell::sync::Lazy;
 use rand::{Rng, SeedableRng, distributions::Alphanumeric, rngs::SmallRng};
 use tempfile::TempDir;
+use tessera::{Engine, Storage, StoreTrait};
 
 const NUM_VALS: usize = 10;
 const KEY_SIZE_SEED: u64 = 233;

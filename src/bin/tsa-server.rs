@@ -1,13 +1,13 @@
 use clap::{Command, arg, value_parser};
-use kvs::{Engine, PoolType, Result, Server, ServerTrait};
 use std::env::current_dir;
 use std::net::SocketAddr;
+use tessera::{Engine, PoolType, Result, Server, ServerTrait};
 use tracing::{Level, info};
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:4000";
 
 fn cli() -> Command {
-    Command::new("kvs-server")
+    Command::new("tsa-server")
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .version(env!("CARGO_PKG_VERSION"))

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{KvsError, Result};
+use crate::{Result, TsaError};
 use tracing::info;
 
 pub struct RespProtocol;
@@ -48,7 +48,7 @@ impl ProtocolTrait for RespProtocol {
             ["OK"] => Ok(Response::Ok),
             ["NOT_FOUND"] => Ok(Response::NotFound),
             ["ERROR", err] => Ok(Response::Error(err.to_string())),
-            _ => Err(KvsError::Protocol("Invalid response format".into())),
+            _ => Err(TsaError::Protocol("Invalid response format".into())),
         }
     }
 }

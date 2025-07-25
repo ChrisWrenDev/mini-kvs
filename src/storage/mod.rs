@@ -1,4 +1,4 @@
-use crate::{KvsError, Result};
+use crate::{Result, TsaError};
 use clap::ValueEnum;
 use std::fmt::{self, Display, Formatter};
 use std::fs;
@@ -35,14 +35,14 @@ impl Display for Engine {
 }
 
 impl FromStr for Engine {
-    type Err = KvsError;
+    type Err = TsaError;
 
     fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
             "kvs" => Ok(Engine::Kvs),
             "sled" => Ok(Engine::Sled),
             "memory" => Ok(Engine::Memory),
-            _ => Err(KvsError::Protocol(format!("Invalid engine: {}", s))),
+            _ => Err(TsaError::Protocol(format!("Invalid engine: {}", s))),
         }
     }
 }

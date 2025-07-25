@@ -3,11 +3,11 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, ToSocketAddrs};
 use tracing::info;
 
-pub struct KvsClientAsync {
+pub struct TsaClientAsync {
     stream: TcpStream,
 }
 
-impl KvsClientAsync {
+impl TsaClientAsync {
     pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<Self> {
         let stream = TcpStream::connect(addr).await?;
 
@@ -16,7 +16,7 @@ impl KvsClientAsync {
     }
 }
 
-impl ClientTraitAsync for KvsClientAsync {
+impl ClientTraitAsync for TsaClientAsync {
     async fn send(&mut self, request: Request) -> Result<Response> {
         let protocol = Protocol::build();
         let encoded = protocol.encode_request(&request);

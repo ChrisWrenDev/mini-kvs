@@ -4,10 +4,10 @@ use std::fmt::{self, Display, Formatter};
 use std::net::SocketAddr;
 
 mod sync_client;
-pub use sync_client::KvsClientSync;
+pub use sync_client::TsaClientSync;
 
 mod async_client;
-pub use async_client::KvsClientAsync;
+pub use async_client::TsaClientAsync;
 
 pub trait ClientTraitSync {
     fn send(&mut self, request: Request) -> Result<Response>;
@@ -34,11 +34,11 @@ impl Display for ClientType {
 }
 
 pub enum ClientSync {
-    Sync(KvsClientSync),
+    Sync(TsaClientSync),
 }
 
 pub enum ClientAsync {
-    Async(KvsClientAsync),
+    Async(TsaClientAsync),
 }
 
 impl ClientSync {
@@ -46,12 +46,12 @@ impl ClientSync {
         //  let config = Config::from_file("../config/config.toml")?;
         //  match config.client {
         //      ClientConfig::Sync => {
-        //          let client = sync_client::KvsClient::connect(addr)?;
+        //          let client = sync_client::TsaClient::connect(addr)?;
         //          Ok(Box::new(client))
         //      }
         //  }
 
-        let client = sync_client::KvsClientSync::connect(addr)?;
+        let client = sync_client::TsaClientSync::connect(addr)?;
         Ok(ClientSync::Sync(client))
     }
 }
@@ -66,7 +66,7 @@ impl ClientTraitSync for ClientSync {
 
 impl ClientAsync {
     pub async fn connect(addr: SocketAddr) -> Result<Self> {
-        let client = async_client::KvsClientAsync::connect(addr).await?;
+        let client = async_client::TsaClientAsync::connect(addr).await?;
         Ok(ClientAsync::Async(client))
     }
 }

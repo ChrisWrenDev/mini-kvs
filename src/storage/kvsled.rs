@@ -1,6 +1,6 @@
 use super::StoreTrait;
-use crate::{KvsError, Result};
-use sled::{Db, Tree};
+use crate::{Result, TsaError};
+use sled::Db;
 use std::sync::{Arc, Mutex};
 
 /// Wrapper of `sled::Db`
@@ -37,7 +37,7 @@ impl StoreTrait for KvSled {
 
     fn remove(&self, key: String) -> Result<()> {
         let tree = self.db.lock()?;
-        tree.remove(key)?.ok_or(KvsError::KeyNotFound)?;
+        tree.remove(key)?.ok_or(TsaError::KeyNotFound)?;
         tree.flush()?;
         Ok(())
     }
